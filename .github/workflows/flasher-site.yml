@@ -1,0 +1,73 @@
+# Builds Beetroot Tempura on a Windows runner and publishes a flasher page with
+# the firmware built in to GitHub Pages. Open the Pages URL in Chrome or Edge
+# (or Chrome on Android with USB-OTG), connect the FM-1 and press Install.
+#
+# One-time setup: repository Settings -> Pages -> Source: "GitHub Actions".
+name: Build firmware and flasher site
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install JieLi toolchain 2.5.3
+        shell: pwsh
+        run: |
+          $exe = "$env:RUNNER_TEMP\jl-2.5.3.exe"
+          curl.exe --fail --location --retry 3 --output $exe https://jl-update.oss-cn-shenzhen.aliyuncs.com/2.5.3.exe
+          # Try to unpack the installer first; fall back to a silent install.
+          $unpacked = "$env:RUNNER_TEMP\jl"
+          & 7z x $exe "-o$unpacked" -y | Out-Null
+          $clang = Get-ChildItem -Path $unpacked -Recurse -Filter clang.exe -ErrorAction SilentlyContinue |
+                   Where-Object { $_.FullName -match '\\pi32\\bin\\clang\.exe$' } | Select-Object -First 1
+          if (-not $clang) {
+            foreach ($flags in @('/S', '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '/quiet')) {
+              Start-Process -FilePath $exe -ArgumentList $flags -Wait
+              $clang = Get-ChildItem -Path 'C:\JL' -Recurse -Filter clang.exe -ErrorAction SilentlyContinue |
+                       Where-Object { $_.FullName -match '\\pi32\\bin\\clang\.exe$' } | Select-Object -First 1
+              if ($clang) { break }
+            }
+          }
+          if (-not $clang) { throw 'Could not install the JieLi toolchain automatically. Install it on a Windows PC and build locally (see BEETROOT_TEMPURA.md).' }
+          $pi32 = Split-Path (Split-Path $clang.FullName)
+          "FM1_PI32_TOOLCHAIN=$pi32" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Toolchain: $pi32"
+
+      - name: Build firmware
+        shell: pwsh
+        # Build.ps1 verifies every toolchain file against sdk/manifest.json
+        # and checks SRAM, heap, BLE and USB linkage before packaging.
+        run: ./sdk/Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN
+
+      - name: Make the flasher site
+        shell: pwsh
+        run: |
+          python tools/flasher/make_flasher.py --firmware build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc --identity build/dx7/build-identity.json --out site/index.html
+          Copy-Item simulator/beetroot-tempura.html site/simulator.html
+          Copy-Item build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc site/beetroot-tempura.fwsc
+          Copy-Item build/dx7/build-identity.json site/build-identity.json
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

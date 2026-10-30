@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Beetroot Tempura Flasher</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one column of four numbered steps — the order is the procedure. */
+:root{--body:#17121a;--plate:#221a26;--raised:#2e2433;--line:#3d3042;--ink:#efe7e9;--muted:#a8979f;
+  --beet:#c41e5c;--leaf:#5ccf7d;--amber:#ffb12e;--bad:#ff6b6b;
+  --display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{background:var(--body);color:var(--ink);margin:0}
+body{font:14px/1.5 var(--mono);padding:24px max(16px,env(safe-area-inset-left)) 48px max(16px,env(safe-area-inset-right))}
+main{max-width:620px;margin:0 auto;display:grid;gap:16px}
+h1{font:800 clamp(28px,7vw,40px)/1 var(--display);margin:0;letter-spacing:-.02em}
+h1 span{color:var(--beet)}
+.lede{color:var(--muted);margin:6px 0 0}
+.step{background:var(--plate);border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;gap:10px}
+.step.off{opacity:.45;pointer-events:none}
+.step h2{font:800 18px/1.2 var(--display);margin:0;display:flex;gap:10px;align-items:baseline}
+.step h2 b{color:var(--beet);font-family:var(--mono);font-size:13px}
+.step p{margin:0;color:var(--muted)}
+button,.file{font:600 13px var(--mono);background:var(--raised);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px 14px;cursor:pointer}
+button.go{background:var(--beet);border-color:var(--beet);color:#fff}
+button:disabled{opacity:.5;cursor:not-allowed}
+button:focus-visible,.file:focus-within,input:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.file input{display:none}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0;font-size:12px}
+dt{color:var(--muted)}dd{margin:0;overflow-wrap:anywhere}
+label.check{display:flex;gap:10px;align-items:flex-start;color:var(--ink)}
+label.check input{margin-top:3px;accent-color:var(--beet)}
+.msg{font-size:13px;min-height:1.5em}
+.msg.ok{color:var(--leaf)}.msg.bad{color:var(--bad)}.msg.warn{color:var(--amber)}
+.bar{height:10px;border-radius:5px;background:var(--raised);overflow:hidden}
+.bar div{height:100%;width:0;background:linear-gradient(90deg,var(--beet),var(--amber));transition:width .2s}
+.note{font-size:12px;color:var(--muted);border-left:2px solid var(--line);padding-left:10px}
+@media (prefers-reduced-motion:reduce){.bar div{transition:none}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Beetroot <span>Tempura</span> flasher</h1>
+  <p class="lede">Installs the firmware on an M-VAVE FM-1 over USB, using M-VAVE's own FM1 Open update code.</p>
+</header>
+
+<p class="note" id="support"></p>
+
+<section class="step" id="s1">
+  <h2><b>1</b> <span id="s1title">Choose the firmware</span></h2>
+  <p id="s1text">Select both files from your build folder <code>build\dx7\</code>: <code>generated\FM1_OFFICIAL_OPEN.fwsc</code> and <code>build-identity.json</code>.</p>
+  <div class="row" id="filerow"><label class="file">Choose files<input id="files" type="file" multiple accept=".fwsc,.json"></label></div>
+  <dl id="info" hidden></dl>
+  <div class="msg" id="m1" role="status"></div>
+</section>
+
+<section class="step off" id="s2">
+  <h2><b>2</b> Connect the FM-1</h2>
+  <p>Plug the FM-1 into this computer with a USB data cable and switch it on. Close other MIDI apps and any other workbench tabs.</p>
+  <div class="row"><button id="connect" type="button">Connect over USB</button></div>
+  <label class="check" id="forcebox" hidden><input id="force" type="checkbox">The FM-1 runs other firmware (stock V15 or a community build). I want to replace it.</label>
+  <div class="msg" id="m2" role="status"></div>
+</section>
+
+<section class="step off" id="s3">
+  <h2><b>3</b> Before you flash</h2>
+  <label class="check"><input type="checkbox" class="ack">I backed up my projects, voice library and sample bank in the M-VAVE workbench.</label>
+  <label class="check"><input type="checkbox" class="ack">The FM-1 stays connected and powered, and I keep this page open until it says done.</label>
+  <label class="check"><input type="checkbox" class="ack">I understand Beetroot Tempura canvases replace FM1 Open project slots 1–8 when saved.</label>
+</section>
+
+<section class="step off" id="s4">
+  <h2><b>4</b> Flash</h2>
+  <div class="row"><button class="go" id="flash" type="button" disabled>Install Beetroot Tempura</button></div>
+  <div class="bar" aria-hidden="true"><div id="bar"></div></div>
+  <div class="msg" id="m4" role="status" aria-live="polite"></div>
+  <p class="note">If anything goes wrong, leave the FM-1 connected and press Install again: the device stays in its update loader until a complete image is written. You can always return to FM1 Open or stock V15 from the M-VAVE workbench at open.m-vave.com.</p>
+</section>
+</main>
+
+<script>
+/* M-VAVE FM1 Open browser updater, unmodified (GPL-3.0 with FM1 SDK linking exception). */
+__WEBUPDATE__
+</script>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const W = globalThis.FM1Web;
+const EN = {
+ 'Flash 镜像无效':'The firmware image is invalid.',
+ 'MIDI 端口过多':'Too many MIDI ports. Unplug other MIDI devices and try again.',
+ 'USB 意外断开':'USB disconnected. Reconnect the same FM-1 and press Install again on this page.',
+ 'USB 连接已断开':'The USB connection was lost.',
+ '关闭 MIDI 端口超时':'Closing the MIDI port timed out. Unplug and replug USB, then connect again.',
+ '写入固件':'Writing firmware',
+ '准备升级程序':'Starting the update loader',
+ '升级程序缺失或无效':'The update loader in this package is missing or invalid.',
+ '升级超过最长等待时间':'The update took too long and did not finish.',
+ '固件与升级程序不匹配':'The firmware and its loader do not match.',
+ '固件主镜像或升级程序格式不兼容':'The firmware image format is not compatible.',
+ '固件内容校验失败':'A firmware section failed its checksum.',
+ '固件包头校验失败':'The firmware package header is corrupt.',
+ '固件包长度无效':'This is not a valid FM-1 firmware package.',
+ '固件存储长度无效':'The firmware package is corrupt.',
+ '固件条目越界':'The firmware package is corrupt.',
+ '固件条目重叠':'The firmware package is corrupt.',
+ '固件目录校验失败':'The firmware package directory is corrupt.',
+ '固件身份无效':'The firmware package identity is invalid.',
+ '固件配置无效':'The firmware build information is invalid.',
+ '已发现 MIDI 端口，但无法匹配':'MIDI ports were found but none matched an FM-1. Leave only the FM-1 connected and try again.',
+ '已找到 MIDI 端口，但设备未回复型号':'Found the FM-1 port but the device did not answer. Close other MIDI apps, power-cycle the FM-1, replug USB and try again.',
+ '强制烧录尚未确认':'Tick the box to replace the other firmware first.',
+ '打开 MIDI 端口超时':'Opening the MIDI port timed out. Close other MIDI apps or tabs and try again.',
+ '更新完成':'Done',
+ '检测到多台可能的升级设备':'More than one possible FM-1 is connected. Connect only one.',
+ '浏览器未发现完整的 MIDI 输入和输出':'The browser sees no MIDI input and output. Connect the switched-on FM-1 over USB, then connect again.',
+ '等待升级设备重新连接':'Waiting for the FM-1 to reconnect',
+ '等待设备重连超时':'The FM-1 did not reconnect in time. Keep this page open, reconnect the same FM-1 and press Install again.',
+ '网页内的固件 SHA-256 校验失败':'The firmware file failed its integrity check.',
+ '网页固件信息无效':'The firmware build information is invalid.',
+ '芯片型号或包目录无效':'This package is not for the FM-1 chip.',
+ '设备使用未知的升级程序':'The FM-1 uses an unknown update loader.',
+ '设备停止请求数据':'The FM-1 stopped requesting data before the update finished.',
+ '设备升级协议不匹配':'The FM-1 update protocol does not match.',
+ '设备响应过多':'The FM-1 sent too many replies; the update stopped.',
+ '设备已经是这个版本':'The FM-1 already runs exactly this build.',
+ '设备已识别；请开启强制烧录':'Tick the box to replace the other firmware, then connect again.',
+ '设备已重启，但固件版本校验不一致':'The FM-1 restarted but reports a different build. Try installing again.',
+ '设备拒绝此固件包':'The FM-1 refused this firmware package.',
+ '设备未响应':'The FM-1 did not respond. Its current firmware may not support browser updates; tick the replace box.',
+ '设备正在处理另一次升级':'The FM-1 is busy with another update. Power-cycle it and try again.',
+ '设备状态已改变':'The FM-1 state changed. Connect again.',
+ '设备的升级阶段不匹配':'The FM-1 is in an unexpected update stage. Connect again.',
+ '设备请求长度无效':'The FM-1 made an invalid request.',
+ '设备读取超出固件包范围':'The FM-1 asked for data outside the package.',
+ '设备身份响应无效':'The FM-1 sent an invalid identity.',
+ '设备身份已改变':'A different device is connected now. Connect again.',
+ '请先连接设备':'Connect the FM-1 first.',
+ '请重新连接设备':'Connect the FM-1 again.',
+ '重启并核对新版本':'Restarting and checking the new version',
+ '正在更新':'An update is already running.'
+};
+const en = text => { text = String(text || ''); for (const k in EN) if (text.startsWith(k)) return EN[k]; return text; };
+const say = (id, text, kind = '') => { const el = $(id); el.textContent = text; el.className = 'msg ' + kind; };
+const enable = (id, on) => $(id).classList.toggle('off', !on);
+
+let pkg = null, updater = null, access = null, connected = null;
+
+$('support').textContent = !W ? 'The updater code failed to load.' :
+  !navigator.requestMIDIAccess ? 'This browser has no Web MIDI. Use desktop Chrome or Edge, or Chrome on Android with a USB-OTG cable.' :
+  !window.isSecureContext ? 'Open this page from a local file or an https address; Web MIDI is blocked here.' :
+  'Works in Chrome and Edge on Windows, macOS, Linux and Android (USB-OTG). Not in Safari or on iPhone.';
+
+function hex(b) { return Array.from(b, x => x.toString(16).padStart(2, '0')).join(''); }
+async function sha(b) { return hex(new Uint8Array(await crypto.subtle.digest('SHA-256', b))); }
+function b64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); }
+
+async function loadPackage(bytes, ident, name) {
+  pkg = null; enable('s2', false); enable('s3', false); enable('s4', false); $('info').hidden = true;
+  try {
+    if (!/^[0-9a-f]{64}$/.test(ident.build_id || '')) throw new Error('build-identity.json has no build_id. Use the one from the same build.');
+    const inspected = W.inspectPackage(bytes);
+    const meta = { schema: 1, kind: 'open', product: inspected.product, family: 7, release_version: ident.release_version || '',
+      build_id: ident.build_id, sha256: await sha(bytes), bytes: bytes.length, loader_sha256: await sha(inspected.loader), data: b64(bytes) };
+    pkg = await W.prepare(meta);
+    $('info').innerHTML = '';
+    for (const [k, v] of [['File', name], ['Size', (bytes.length / 1024).toFixed(0) + ' KB'], ['Product', pkg.product],
+                          ['Version', meta.release_version || '—'], ['Build', meta.build_id.slice(0, 16) + '…']]) {
+      const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = v; $('info').append(dt, dd);
+    }
+    $('info').hidden = false;
+    say('m1', 'Firmware checked: package, loader and checksums are valid.', 'ok');
+    enable('s2', true);
+  } catch (err) { say('m1', en(err.message), 'bad'); }
+}
+$('files').addEventListener('change', async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  const fw = files.find(f => /\.fwsc$/i.test(f.name)), id = files.find(f => /\.json$/i.test(f.name));
+  if (!fw || !id) { say('m1', 'Select both the .fwsc file and build-identity.json (hold Ctrl or Cmd to pick two).', 'warn'); return; }
+  try { await loadPackage(new Uint8Array(await fw.arrayBuffer()), JSON.parse(await id.text()), fw.name); }
+  catch (err) { say('m1', en(err.message), 'bad'); }
+});
+/* Hosted build: the firmware ships inside this page, so nothing is uploaded. */
+const EMBEDDED = __EMBEDDED__;
+if (EMBEDDED && W) {
+  $('s1title').textContent = 'Firmware included';
+  $('s1text').textContent = 'This page carries a Beetroot Tempura build. It is checked in your browser before anything is sent to the FM-1.';
+  $('filerow').hidden = true;
+  const raw = atob(EMBEDDED.fwsc), bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  loadPackage(bytes, EMBEDDED.identity, EMBEDDED.name);
+}
+
+async function doConnect() {
+  say('m2', 'Asking for USB MIDI access…');
+  try {
+    access = access || await navigator.requestMIDIAccess({ sysex: true });
+    if (updater) await updater.disconnect().catch(() => {});
+    updater = new W.Updater(access, pkg, (phase, pct) => { say('m4', en(phase) + (pct < 100 ? ' · ' + pct + '%' : ''), pct >= 100 ? 'ok' : ''); $('bar').style.width = pct + '%'; });
+    connected = await updater.connect({ force: $('force').checked });
+    if (connected.migration) {
+      $('forcebox').hidden = false;
+      say('m2', 'Found an FM-1 running ' + connected.identity + '. Tick the box below to replace it, then connect again.', 'warn');
+      enable('s3', false); return;
+    }
+    if (connected.same) { say('m2', 'This FM-1 already runs exactly this build. Nothing to install.', 'ok'); return; }
+    say('m2', 'Connected: ' + connected.identity + (connected.resume ? ' (update loader — ready to resume)' : '') + '.', 'ok');
+    enable('s3', true); checkAcks();
+  } catch (err) {
+    say('m2', err.name === 'SecurityError' || err.name === 'NotAllowedError' ? 'MIDI access was blocked. Allow MIDI devices (with system exclusive) for this page in the browser’s site settings.' : en(err.message), 'bad');
+    if (/未响应/.test(err.message)) $('forcebox').hidden = false;
+  }
+}
+$('connect').addEventListener('click', doConnect);
+$('force').addEventListener('change', () => { connected = null; enable('s3', false); enable('s4', false); });
+
+function checkAcks() {
+  const all = [...document.querySelectorAll('.ack')].every(c => c.checked);
+  enable('s4', all && !!connected); $('flash').disabled = !(all && connected);
+}
+document.querySelectorAll('.ack').forEach(c => c.addEventListener('change', checkAcks));
+
+$('flash').addEventListener('click', async () => {
+  $('flash').disabled = true; $('connect').disabled = true; $('files').disabled = true;
+  window.onbeforeunload = () => 'The FM-1 is being updated.';
+  try {
+    await updater.install({ force: $('force').checked });
+    $('bar').style.width = '100%';
+    say('m4', 'Done. Beetroot Tempura is installed and verified. The FM-1 restarts into the canvas.', 'ok');
+  } catch (err) {
+    say('m4', en(err.message) + ' Leave the FM-1 connected, then press Connect and Install again.', 'bad');
+    connected = null; $('connect').disabled = false;
+  } finally { window.onbeforeunload = null; $('files').disabled = false; }
+});
+})();
+</script>
+</body>
+</html>
