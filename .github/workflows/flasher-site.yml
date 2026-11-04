@@ -28,6 +28,7 @@ jobs:
         run: |
           # Findings are reported as annotations so they show on the run page.
           function Note($m) { Write-Host "::notice::$m"; Write-Host $m }
+          function Short($t, $n) { $t = ($t | Out-String) -replace '\s+', ' '; if ($t.Length -gt $n) { $t.Substring(0, $n) } else { $t } }
           $exe = "$env:RUNNER_TEMP\jl-2.5.3.exe"
           $t = Get-Date
           curl.exe --fail --location --retry 3 --connect-timeout 30 --max-time 900 --output $exe https://jl-update.oss-cn-shenzhen.aliyuncs.com/2.5.3.exe
@@ -49,16 +50,17 @@ jobs:
           }
           # 1. Inno Setup installer: unpack it with innoextract, nothing is run.
           $pi32 = $null
+          try {
           $ie = "$env:RUNNER_TEMP\innoextract"
           curl.exe --fail --location --retry 3 --max-time 300 --output "$ie.zip" https://github.com/dscharrer/innoextract/releases/download/1.9/innoextract-1.9-windows.zip
           if ($LASTEXITCODE -eq 0) {
             Expand-Archive "$ie.zip" $ie -Force
             $iex = (Get-ChildItem $ie -Recurse -Filter innoextract.exe | Select-Object -First 1).FullName
             $info = & $iex --info $exe 2>&1 | Out-String
-            Note ("innoextract: " + ($info -replace '\s+', ' ').Substring(0, [Math]::Min(300, $info.Length)))
+            Note ("innoextract: " + (Short $info 400))
             $unpacked = "$env:RUNNER_TEMP\jl"
             $out = & $iex --extract --silent --output-dir $unpacked $exe 2>&1 | Out-String
-            if ($LASTEXITCODE -ne 0) { Note ("innoextract failed: " + ($out -replace '\s+', ' ').Substring(0, [Math]::Min(400, $out.Length))) }
+            if ($LASTEXITCODE -ne 0) { Note ("innoextract failed: " + (Short $out 600)) }
             $pi32 = Find-Pi32 @($unpacked)
             if (-not $pi32 -and (Test-Path $unpacked)) {
               $dirs = (Get-ChildItem $unpacked -Directory -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 30 | ForEach-Object { $_.FullName.Substring($unpacked.Length) }) -join ' | '
@@ -71,6 +73,7 @@ jobs:
               $pi32 = Find-Pi32 @("$unpacked\nested")
             }
           } else { Note 'Could not download innoextract' }
+          } catch { Note ("innoextract step error: " + (Short $_ 600)) }
 
           # 2. Run the installer silently, with a hard time limit per attempt.
           if (-not $pi32) {
