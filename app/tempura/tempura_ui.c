@@ -523,6 +523,19 @@ static void draw_grid(void)
             gfx_fill(px - 1, py - 1, 2, 2, gfx_mix(c, C_TEXT, 120));
         } else gfx_fill(px - 1, py - 1, 2, 2, c);
     }
+    /* Nothing to granulate: say so instead of staying silent. */
+    unsigned sources = 0;
+    for (unsigned t = 0; t < TP_TRACKS; ++t) {
+        int16_t src = canvas.tr[t][TR_SOURCE];
+        if (src == TP_SOURCE_LIVE || tempura_slot_frames((unsigned)src)) ++sources;
+    }
+    if (!sources) {
+        gfx_fill(8, GY + 58, GFX_W - 16, 44, C_PANEL);
+        gfx_rect(8, GY + 58, GFX_W - 16, 44, C_BEET);
+        gfx_text(120 - gfx_text_width("NO SOUNDS LOADED", 1) / 2, GY + 66, "NO SOUNDS LOADED", 1, C_AMBER);
+        gfx_text(120 - gfx_text_width("FLASHER PAGE: LOAD SOUNDS", 1) / 2, GY + 78, "FLASHER PAGE: LOAD SOUNDS", 1, C_TEXT);
+        gfx_text(120 - gfx_text_width("OR SCL: SOURCE LIVE IN", 1) / 2, GY + 90, "OR SCL: SOURCE LIVE IN", 1, C_DIM);
+    }
     int cx = GX + (int)cur_x * CW - 1, cy = GY + (int)cur_y * CH - 1;
     uint16_t cc = painting ? C_BEET : C_TEXT;
     gfx_rect(cx, cy, CW + 1, CH + 1, cc);

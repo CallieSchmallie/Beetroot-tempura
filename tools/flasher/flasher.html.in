@@ -80,11 +80,24 @@ label.check input{margin-top:3px;accent-color:var(--beet)}
   <div class="msg" id="m4" role="status" aria-live="polite"></div>
   <p class="note">If anything goes wrong, leave the FM-1 connected and press Install again: the device stays in its update loader until a complete image is written. You can always return to FM1 Open or stock V15 from the M-VAVE workbench at open.m-vave.com.</p>
 </section>
+
+<section class="step" id="s5">
+  <h2><b>5</b> Load sounds</h2>
+  <p>Beetroot Tempura makes grains from the FM-1's eight sample slots. If the tracks on the FM-1 show a dash, the slots are empty and it stays silent. Load eight demo textures (choir, kalimba, strings, glass, arpeggio, breath, drone, vox), or your own WAVs with M-VAVE's workbench sample manager.</p>
+  <p class="note">This replaces the FM-1's whole sample bank. Back it up first if it has sounds you want to keep.</p>
+  <div class="row"><button class="go" id="sounds" type="button">Load demo sounds</button></div>
+  <div class="bar" aria-hidden="true"><div id="bar5"></div></div>
+  <div class="msg" id="m5" role="status" aria-live="polite"></div>
+</section>
 </main>
 
 <script>
 /* M-VAVE FM1 Open browser updater, unmodified (GPL-3.0 with FM1 SDK linking exception). */
 __WEBUPDATE__
+</script>
+<script>
+/* M-VAVE FM1 Open sample bank helpers, unmodified. */
+__SAMPLES__
 </script>
 <script>
 (() => {
@@ -143,7 +156,16 @@ const EN = {
  '请先连接设备':'Connect the FM-1 first.',
  '请重新连接设备':'Connect the FM-1 again.',
  '重启并核对新版本':'Restarting and checking the new version',
- '正在更新':'An update is already running.'
+ '正在更新':'An update is already running.',
+ '请只连接一台 FM1':'Connect only one FM-1.',
+ '未找到支持项目库的 FM1 USB MIDI':'No FM-1 found over USB MIDI. Connect the switched-on FM-1 and try again.',
+ '设备未响应；请检查 USB':'The FM-1 did not respond. Check the USB cable and that Beetroot Tempura is running.',
+ '设备采样库忙':'The FM-1 sample bank is busy. Wait a moment and try again.',
+ '采样空间不足':'The sounds do not fit in the FM-1 sample memory.',
+ '设备采样读回不一致':'The FM-1 read back different data. Press Load again.',
+ '旧采样库占用了扩展存储空间':'An old sample bank is using the extended storage. Back it up and shrink it in the M-VAVE workbench first.',
+ '文件传输正在进行':'A transfer is already running.',
+ '已取消':'Cancelled. Load the sounds again to finish.'
 };
 const en = text => { text = String(text || ''); for (const k in EN) if (text.startsWith(k)) return EN[k]; return text; };
 const say = (id, text, kind = '') => { const el = $(id); el.textContent = text; el.className = 'msg ' + kind; };
@@ -224,6 +246,35 @@ function checkAcks() {
   enable('s4', all && !!connected); $('flash').disabled = !(all && connected);
 }
 document.querySelectorAll('.ack').forEach(c => c.addEventListener('change', checkAcks));
+
+const DEMO_BANK = __DEMOBANK__;
+$('sounds').addEventListener('click', async () => {
+  if (!W || !globalThis.FM1Samples || !DEMO_BANK) { say('m5', 'The sound loader is not available in this copy of the page.', 'bad'); return; }
+  $('sounds').disabled = true; $('flash').disabled = true;
+  let lib = null;
+  try {
+    say('m5', 'Connecting to the FM-1…');
+    if (updater) await updater.disconnect().catch(() => {});
+    connected = null; enable('s4', false);
+    access = access || await navigator.requestMIDIAccess({ sysex: true });
+    const raw = atob(DEMO_BANK), bank = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bank[i] = raw.charCodeAt(i);
+    globalThis.FM1Samples.read(bank);
+    lib = new W.Library(access);
+    await lib.connect();
+    await lib.extensions();
+    window.onbeforeunload = () => 'Sounds are being written to the FM-1.';
+    await lib.samplesWrite(bank, v => { const pct = Math.round(v * 100); $('bar5').style.width = pct + '%'; say('m5', (v < 0.6 ? 'Writing sounds · ' : 'Checking · ') + pct + '%'); });
+    $('bar5').style.width = '100%';
+    say('m5', 'Done. The eight tracks on the FM-1 now show waveforms. Press PLAY or a key to hear them.', 'ok');
+  } catch (err) {
+    say('m5', err.name === 'SecurityError' || err.name === 'NotAllowedError' ? 'MIDI access was blocked. Allow MIDI devices (with system exclusive) for this page in the browser’s site settings.' : en(err.message), 'bad');
+  } finally {
+    window.onbeforeunload = null;
+    if (lib) await lib.disconnect().catch(() => {});
+    $('sounds').disabled = false;
+  }
+});
 
 $('flash').addEventListener('click', async () => {
   $('flash').disabled = true; $('connect').disabled = true; $('files').disabled = true;

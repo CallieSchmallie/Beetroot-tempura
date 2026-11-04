@@ -15,6 +15,12 @@ ap.add_argument('--out', default=str(root / 'tools/flasher/beetroot-tempura-flas
 a = ap.parse_args()
 page = (root / 'tools/flasher/flasher.html.in').read_text(encoding='utf-8')
 code = (root / 'sdk/WebUpdate.js').read_text(encoding='utf-8')
+samples = (root / 'sdk/Samples.js').read_text(encoding='utf-8')
+# Keep only the bank-format helpers; the rest of Samples.js drives M-VAVE's workbench page.
+cut = samples.index('globalThis.FM1Samples=')
+samples = samples[:samples.index('\n', cut) + 1] + '})();\n'
+bank = root / 'tools/flasher/demo_bank.bin'
+demo = json.dumps(base64.b64encode(bank.read_bytes()).decode()) if bank.exists() else 'null'
 embedded = 'null'
 if a.firmware:
     fw = pathlib.Path(a.firmware).read_bytes()
@@ -23,5 +29,5 @@ if a.firmware:
                            'identity': {'build_id': ident['build_id'], 'release_version': ident.get('release_version', '')},
                            'fwsc': base64.b64encode(fw).decode()})
 out = pathlib.Path(a.out); out.parent.mkdir(parents=True, exist_ok=True)
-out.write_text(page.replace('__WEBUPDATE__', code).replace('__EMBEDDED__', embedded), encoding='utf-8')
+out.write_text(page.replace('__WEBUPDATE__', code).replace('__SAMPLES__', samples).replace('__EMBEDDED__', embedded).replace('__DEMOBANK__', demo), encoding='utf-8')
 print(out)
