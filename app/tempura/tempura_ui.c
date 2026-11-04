@@ -12,6 +12,8 @@
  *   SCL  track   GLO settings/Bluetooth/system   SAVE canvases
  *   HOME+PLAY    panic
  */
+/* Control-task code: optimise for size (the FM-1 app area is about 444 KB). */
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
 #include "tempura.h"
 #include "tempura_gfx.h"
 #include "instrument.h"
@@ -773,3 +775,5 @@ void tempura_ui_control(void)
 
 /* MIDI-triggered canvas edits need a re-cook on the next poll. */
 void tempura_ui_touch(void) { canvas_dirty = 1; }
+
+#pragma clang attribute pop

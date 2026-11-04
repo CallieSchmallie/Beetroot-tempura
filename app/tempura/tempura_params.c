@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception
  * Beetroot Tempura: parameter metadata, formatting and the default canvas. */
+/* Control-task code: optimise for size (the FM-1 app area is about 444 KB). */
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
 #include "tempura.h"
 #include <string.h>
 
@@ -266,3 +268,5 @@ uint32_t tempura_crc32(uint32_t crc, const void *data, unsigned bytes)
     }
     return ~crc;
 }
+
+#pragma clang attribute pop

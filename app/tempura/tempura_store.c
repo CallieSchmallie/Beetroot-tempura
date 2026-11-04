@@ -5,6 +5,8 @@
  * for project slot N. Each record carries a CRC and a commit word written
  * last, so an interrupted save reads back as empty rather than corrupt.
  * The sample bank, settings sector and staging sector are never touched. */
+/* Control-task code: optimise for size (the FM-1 app area is about 444 KB). */
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
 #include "tempura.h"
 #include <string.h>
 #ifndef FM1_HOST_TEST
@@ -73,3 +75,5 @@ void tempura_unlock(void)
     if (lock_depth && --lock_depth == 0) fm1_device_irq_restore(lock_state);
 }
 #endif
+
+#pragma clang attribute pop

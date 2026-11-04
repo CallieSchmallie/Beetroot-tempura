@@ -2566,7 +2566,7 @@ controls_done:
 void groove_screen_control(void)
 {
     tempura_ui_control();
-    if (tempura_ui_selected() < 8U) return; /* always true: the stock UI below stays linked but idle */
+    return; /* Beetroot Tempura replaces the stock UI; the code below is dropped at link time */
     struct fm1_controls controls;
     fm1_controls_read(&controls);
     uint32_t now = fm1_millis(), key_down = controls.keys & ~previous_keys;

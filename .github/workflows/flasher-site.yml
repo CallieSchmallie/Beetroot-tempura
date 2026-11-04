@@ -107,6 +107,11 @@ jobs:
         # and checks SRAM, heap, BLE and USB linkage before packaging.
         run: ./sdk/Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN
 
+      - name: Report largest code on failure
+        if: failure()
+        shell: pwsh
+        run: python tools/ci/map_sizes.py build/dx7/sdk.map
+
       - name: Make the flasher site
         shell: pwsh
         run: |

@@ -10,6 +10,8 @@
  *   72 release  73 attack  74 cutoff  91 reverb  93 mod  94 delay  123 all off
  * Program change 0-7 loads canvases 1-8. MIDI clock sets the delay tempo.
  */
+/* Control-task code: optimise for size (the FM-1 app area is about 444 KB). */
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
 #include "tempura.h"
 #include "tempura_dsp.h"
 #include <string.h>
@@ -123,3 +125,5 @@ void tempura_midi_key_out(const uint8_t *m, unsigned n)
     if ((ports & 1U) && (fm1_midi_ready_ports() & (1U << FM1_MIDI_USB))) (void)fm1_midi_send_port(FM1_MIDI_USB, m, n);
     if ((ports & 2U) && (fm1_midi_ready_ports() & (1U << FM1_MIDI_BLE))) (void)fm1_midi_send_port(FM1_MIDI_BLE, m, n);
 }
+
+#pragma clang attribute pop

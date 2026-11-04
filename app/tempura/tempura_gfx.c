@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception
  * Beetroot Tempura: LCD band renderer and 5x7 font. */
+/* Control-task code: optimise for size (the FM-1 app area is about 444 KB). */
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
 #include "tempura_gfx.h"
 #include "fm1.h"
 #include <string.h>
@@ -134,3 +136,5 @@ void gfx_pump(gfx_draw_fn draw, unsigned budget)
     }
     if (frame_active && next_band >= GFX_BANDS && ready_band[0] < 0 && ready_band[1] < 0) frame_active = 0;
 }
+
+#pragma clang attribute pop
