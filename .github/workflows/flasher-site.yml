@@ -47,35 +47,48 @@ jobs:
             }
             return $null
           }
-          # 1. Unpack without running anything (works for NSIS and 7z installers).
-          $unpacked = "$env:RUNNER_TEMP\jl"
-          $p = Start-Process 7z -ArgumentList @('x', $exe, "-o$unpacked", '-y', '-bso0', '-bsp0') -PassThru -NoNewWindow
-          if (-not $p.WaitForExit(600000)) { $p.Kill(); Note '7z unpack timed out' }
-          $pi32 = Find-Pi32 @($unpacked)
-          if (-not $pi32 -and (Test-Path $unpacked)) {
-            $top = (Get-ChildItem $unpacked -Recurse -ErrorAction SilentlyContinue | Select-Object -First 25 | ForEach-Object { $_.FullName.Substring($unpacked.Length) }) -join ' | '
-            Note "Unpacked but no pi32 clang. First entries: $top"
-            # Nested archives inside the installer
-            Get-ChildItem $unpacked -Recurse -Include *.7z,*.zip,*.exe -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 20MB } | ForEach-Object {
-              Note "Unpacking nested $($_.Name) ($([int]($_.Length/1MB)) MB)"
-              $q = Start-Process 7z -ArgumentList @('x', $_.FullName, "-o$unpacked\nested", '-y', '-bso0', '-bsp0') -PassThru -NoNewWindow
-              if (-not $q.WaitForExit(600000)) { $q.Kill() }
+          # 1. Inno Setup installer: unpack it with innoextract, nothing is run.
+          $pi32 = $null
+          $ie = "$env:RUNNER_TEMP\innoextract"
+          curl.exe --fail --location --retry 3 --max-time 300 --output "$ie.zip" https://github.com/dscharrer/innoextract/releases/download/1.9/innoextract-1.9-windows.zip
+          if ($LASTEXITCODE -eq 0) {
+            Expand-Archive "$ie.zip" $ie -Force
+            $iex = (Get-ChildItem $ie -Recurse -Filter innoextract.exe | Select-Object -First 1).FullName
+            $info = & $iex --info $exe 2>&1 | Out-String
+            Note ("innoextract: " + ($info -replace '\s+', ' ').Substring(0, [Math]::Min(300, $info.Length)))
+            $unpacked = "$env:RUNNER_TEMP\jl"
+            $out = & $iex --extract --silent --output-dir $unpacked $exe 2>&1 | Out-String
+            if ($LASTEXITCODE -ne 0) { Note ("innoextract failed: " + ($out -replace '\s+', ' ').Substring(0, [Math]::Min(400, $out.Length))) }
+            $pi32 = Find-Pi32 @($unpacked)
+            if (-not $pi32 -and (Test-Path $unpacked)) {
+              $dirs = (Get-ChildItem $unpacked -Directory -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 30 | ForEach-Object { $_.FullName.Substring($unpacked.Length) }) -join ' | '
+              Note "Extracted, but no pi32\bin\clang.exe. Folders: $dirs"
+              # Nested archives inside the installer
+              Get-ChildItem $unpacked -Recurse -Include *.7z,*.zip -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 5MB } | ForEach-Object {
+                Note "Unpacking nested $($_.Name) ($([int]($_.Length/1MB)) MB)"
+                & 7z x $_.FullName "-o$unpacked\nested" -y -bso0 -bsp0 | Out-Null
+              }
+              $pi32 = Find-Pi32 @("$unpacked\nested")
             }
-            $pi32 = Find-Pi32 @("$unpacked\nested")
-          }
+          } else { Note 'Could not download innoextract' }
+
           # 2. Run the installer silently, with a hard time limit per attempt.
           if (-not $pi32) {
             $flags = switch ($kind) {
-              'inno' { @('/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR=C:\JL') }
+              'inno' { @("/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /NOICONS /DIR=C:\JL /LOG=$env:RUNNER_TEMP\jl-setup.log") }
               'nsis' { @('/S /D=C:\JL') }
               default { @('/S', '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR=C:\JL', '/quiet') }
             }
             foreach ($f in $flags) {
               Note "Running installer with: $f"
               $p = Start-Process -FilePath $exe -ArgumentList $f -PassThru
-              if (-not $p.WaitForExit(480000)) {
-                Note "Installer did not finish in 8 min with '$f' (probably waiting for a click); stopping it"
+              if (-not $p.WaitForExit(300000)) {
+                Note "Installer did not finish in 5 min with '$f' (probably waiting for a click); stopping it"
                 Get-Process | Where-Object { $_.Path -like "$env:RUNNER_TEMP*" -or $_.Name -match 'jl|setup|install' } | Stop-Process -Force -ErrorAction SilentlyContinue
+              }
+              if (Test-Path "$env:RUNNER_TEMP\jl-setup.log") {
+                $tail = (Get-Content "$env:RUNNER_TEMP\jl-setup.log" -Tail 12) -join ' / '
+                Note "Setup log tail: $tail"
               }
               $pi32 = Find-Pi32 @('C:\JL', "$env:ProgramFiles", "${env:ProgramFiles(x86)}", "$env:LOCALAPPDATA")
               if ($pi32) { break }
