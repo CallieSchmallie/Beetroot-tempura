@@ -18,31 +18,72 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
       - name: Install JieLi toolchain 2.5.3
         shell: pwsh
+        timeout-minutes: 25
         run: |
+          # Findings are reported as annotations so they show on the run page.
+          function Note($m) { Write-Host "::notice::$m"; Write-Host $m }
           $exe = "$env:RUNNER_TEMP\jl-2.5.3.exe"
-          curl.exe --fail --location --retry 3 --output $exe https://jl-update.oss-cn-shenzhen.aliyuncs.com/2.5.3.exe
-          # Try to unpack the installer first; fall back to a silent install.
-          $unpacked = "$env:RUNNER_TEMP\jl"
-          & 7z x $exe "-o$unpacked" -y | Out-Null
-          $clang = Get-ChildItem -Path $unpacked -Recurse -Filter clang.exe -ErrorAction SilentlyContinue |
+          $t = Get-Date
+          curl.exe --fail --location --retry 3 --connect-timeout 30 --max-time 900 --output $exe https://jl-update.oss-cn-shenzhen.aliyuncs.com/2.5.3.exe
+          if ($LASTEXITCODE -ne 0) { throw "Download of the JieLi installer failed (curl exit $LASTEXITCODE)." }
+          $size = (Get-Item $exe).Length
+          Note ("Downloaded installer: {0:N1} MB in {1:N0} s" -f ($size / 1MB), ((Get-Date) - $t).TotalSeconds)
+          $head = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($exe), 0, [Math]::Min($size, 4MB))
+          $kind = if ($head -match 'Inno Setup') { 'inno' } elseif ($head -match 'Nullsoft') { 'nsis' } elseif ($head -match '7-Zip|7zS') { '7z' } elseif ($head -match 'InstallShield') { 'installshield' } else { 'unknown' }
+          Note "Installer type: $kind"
+
+          function Find-Pi32($dirs) {
+            foreach ($d in $dirs) {
+              if (-not (Test-Path $d)) { continue }
+              $c = Get-ChildItem -Path $d -Recurse -Filter clang.exe -ErrorAction SilentlyContinue |
                    Where-Object { $_.FullName -match '\\pi32\\bin\\clang\.exe$' } | Select-Object -First 1
-          if (-not $clang) {
-            foreach ($flags in @('/S', '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '/quiet')) {
-              Start-Process -FilePath $exe -ArgumentList $flags -Wait
-              $clang = Get-ChildItem -Path 'C:\JL' -Recurse -Filter clang.exe -ErrorAction SilentlyContinue |
-                       Where-Object { $_.FullName -match '\\pi32\\bin\\clang\.exe$' } | Select-Object -First 1
-              if ($clang) { break }
+              if ($c) { return (Split-Path (Split-Path $c.FullName)) }
+            }
+            return $null
+          }
+          # 1. Unpack without running anything (works for NSIS and 7z installers).
+          $unpacked = "$env:RUNNER_TEMP\jl"
+          $p = Start-Process 7z -ArgumentList @('x', $exe, "-o$unpacked", '-y', '-bso0', '-bsp0') -PassThru -NoNewWindow
+          if (-not $p.WaitForExit(600000)) { $p.Kill(); Note '7z unpack timed out' }
+          $pi32 = Find-Pi32 @($unpacked)
+          if (-not $pi32 -and (Test-Path $unpacked)) {
+            $top = (Get-ChildItem $unpacked -Recurse -ErrorAction SilentlyContinue | Select-Object -First 25 | ForEach-Object { $_.FullName.Substring($unpacked.Length) }) -join ' | '
+            Note "Unpacked but no pi32 clang. First entries: $top"
+            # Nested archives inside the installer
+            Get-ChildItem $unpacked -Recurse -Include *.7z,*.zip,*.exe -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 20MB } | ForEach-Object {
+              Note "Unpacking nested $($_.Name) ($([int]($_.Length/1MB)) MB)"
+              $q = Start-Process 7z -ArgumentList @('x', $_.FullName, "-o$unpacked\nested", '-y', '-bso0', '-bsp0') -PassThru -NoNewWindow
+              if (-not $q.WaitForExit(600000)) { $q.Kill() }
+            }
+            $pi32 = Find-Pi32 @("$unpacked\nested")
+          }
+          # 2. Run the installer silently, with a hard time limit per attempt.
+          if (-not $pi32) {
+            $flags = switch ($kind) {
+              'inno' { @('/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR=C:\JL') }
+              'nsis' { @('/S /D=C:\JL') }
+              default { @('/S', '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR=C:\JL', '/quiet') }
+            }
+            foreach ($f in $flags) {
+              Note "Running installer with: $f"
+              $p = Start-Process -FilePath $exe -ArgumentList $f -PassThru
+              if (-not $p.WaitForExit(480000)) {
+                Note "Installer did not finish in 8 min with '$f' (probably waiting for a click); stopping it"
+                Get-Process | Where-Object { $_.Path -like "$env:RUNNER_TEMP*" -or $_.Name -match 'jl|setup|install' } | Stop-Process -Force -ErrorAction SilentlyContinue
+              }
+              $pi32 = Find-Pi32 @('C:\JL', "$env:ProgramFiles", "${env:ProgramFiles(x86)}", "$env:LOCALAPPDATA")
+              if ($pi32) { break }
             }
           }
-          if (-not $clang) { throw 'Could not install the JieLi toolchain automatically. Install it on a Windows PC and build locally (see BEETROOT_TEMPURA.md).' }
-          $pi32 = Split-Path (Split-Path $clang.FullName)
+          if (-not $pi32) { throw 'Could not install the JieLi toolchain unattended. See the notices above.' }
+          Note "Toolchain found at $pi32"
           "FM1_PI32_TOOLCHAIN=$pi32" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Write-Host "Toolchain: $pi32"
 
       - name: Build firmware
         shell: pwsh
