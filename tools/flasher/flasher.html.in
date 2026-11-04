@@ -38,6 +38,15 @@ label.check input{margin-top:3px;accent-color:var(--beet)}
 .bar{height:10px;border-radius:5px;background:var(--raised);overflow:hidden}
 .bar div{height:100%;width:0;background:linear-gradient(90deg,var(--beet),var(--amber));transition:width .2s}
 .note{font-size:12px;color:var(--muted);border-left:2px solid var(--line);padding-left:10px}
+.packs{display:flex;flex-wrap:wrap;gap:6px}
+.packs button{padding:7px 11px;font-size:12px}
+.packs button[aria-pressed="true"]{border-color:var(--beet);background:#4a1c32}
+.slots{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.slots li{display:grid;grid-template-columns:4.5em 1fr auto;gap:8px;align-items:center}
+.slots label{color:var(--muted);font-size:12px}
+.slots select{font:13px var(--mono);background:var(--raised);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;min-width:0;width:100%}
+.slots button{padding:8px 12px;min-width:3em}
+.slots button.playing{border-color:var(--amber);color:var(--amber)}
 @media (prefers-reduced-motion:reduce){.bar div{transition:none}}
 </style>
 </head>
@@ -83,9 +92,11 @@ label.check input{margin-top:3px;accent-color:var(--beet)}
 
 <section class="step" id="s5">
   <h2><b>5</b> Load sounds</h2>
-  <p>Beetroot Tempura makes grains from the FM-1's eight sample slots. If the tracks on the FM-1 show a dash, the slots are empty and it stays silent. Load eight demo textures (choir, kalimba, strings, glass, arpeggio, breath, drone, vox), or your own WAVs with M-VAVE's workbench sample manager.</p>
-  <p class="note">This replaces the FM-1's whole sample bank. Back it up first if it has sounds you want to keep.</p>
-  <div class="row"><button class="go" id="sounds" type="button">Load demo sounds</button></div>
+  <p>Beetroot Tempura makes grains from the FM-1's eight sample slots, and the FM-1 holds about 19.5 seconds of sound across all eight. Pick a pack, or choose a sound for each track from the 28 in the library. Tap ▶ to hear one.</p>
+  <div class="packs" id="packs" role="group" aria-label="Sound packs"></div>
+  <ol class="slots" id="slots"></ol>
+  <p class="note">Loading replaces the FM-1's whole sample bank. Back it up in the M-VAVE workbench first if it has sounds you want to keep. Your own WAVs can be loaded there too.</p>
+  <div class="row"><button class="go" id="sounds" type="button">Load these 8 sounds</button></div>
   <div class="bar" aria-hidden="true"><div id="bar5"></div></div>
   <div class="msg" id="m5" role="status" aria-live="polite"></div>
 </section>
@@ -98,6 +109,9 @@ __WEBUPDATE__
 <script>
 /* M-VAVE FM1 Open sample bank helpers, unmodified. */
 __SAMPLES__
+</script>
+<script>
+__SEA5__
 </script>
 <script>
 (() => {
@@ -247,26 +261,83 @@ function checkAcks() {
 }
 document.querySelectorAll('.ack').forEach(c => c.addEventListener('change', checkAcks));
 
-const DEMO_BANK = __DEMOBANK__;
+/* ---- sound library ---- */
+const LIBRARY = __LIBRARY__, DQT = __DQT__;
+const PACKS = {
+  'Original demo': ['CHOIR', 'KALIMBA', 'STRINGS', 'GLASS', 'ARPEGGIO', 'BREATH', 'DRONE', 'VOX'],
+  'Ambient': ['WARM PAD', 'OCEAN', 'RAIN', 'GONG', 'BOWED METAL', 'DRONE', 'OOH CHOIR', 'BREATH'],
+  'Plucked': ['MARIMBA', 'MUSIC BOX', 'HARP', 'KALIMBA', 'GUITAR', 'BASS PLUCK', 'BELL TREE', 'TAPE KEYS'],
+  'Voices & air': ['CHOIR', 'OOH CHOIR', 'VOX', 'FLUTE', 'BREATH', 'BIRDS', 'LOW CELLO', 'STRINGS'],
+  'Rhythm & noise': ['DRUM LOOP', 'PULSE', 'RADIO', 'RAIN', 'GLASS', 'BASS PLUCK', 'ORGAN', 'BIRDS'],
+};
+const byName = Object.fromEntries((LIBRARY || []).map(s => [s.name, s]));
+const unb64 = s => { const r = atob(s), u = new Uint8Array(r.length); for (let i = 0; i < r.length; i++) u[i] = r.charCodeAt(i); return u; };
+const selects = [];
+function choosePack(name) {
+  PACKS[name].forEach((sound, i) => { selects[i].value = sound; });
+  document.querySelectorAll('#packs button').forEach(b => b.setAttribute('aria-pressed', b.dataset.pack === name));
+}
+function markCustom() {
+  const now = selects.map(s => s.value);
+  document.querySelectorAll('#packs button').forEach(b => b.setAttribute('aria-pressed', PACKS[b.dataset.pack].every((v, i) => v === now[i])));
+}
+let audio = null, playing = null;
+function stopPreview() { if (playing) { try { playing.src.stop(); } catch (e) {} playing.btn.classList.remove('playing'); playing.btn.textContent = '▶'; playing = null; } }
+function preview(i, btn) {
+  const wasMe = playing && playing.btn === btn;
+  stopPreview(); if (wasMe) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const s = byName[selects[i].value];
+    s.pcm = s.pcm || SEA5.decode(unb64(s.sea), s.frames, DQT);
+    const buf = audio.createBuffer(1, s.frames, SEA5.RATE); buf.getChannelData(0).set(s.pcm);
+    const src = audio.createBufferSource(); src.buffer = buf; src.connect(audio.destination);
+    src.onended = () => { if (playing && playing.src === src) stopPreview(); };
+    audio.resume(); src.start(); playing = { src, btn }; btn.classList.add('playing'); btn.textContent = '■';
+  } catch (err) { say('m5', 'Could not play the preview: ' + err.message, 'bad'); }
+}
+if (LIBRARY) {
+  for (const name of Object.keys(PACKS)) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = name; b.dataset.pack = name;
+    b.addEventListener('click', () => { stopPreview(); choosePack(name); }); $('packs').append(b);
+  }
+  for (let i = 0; i < 8; i++) {
+    const li = document.createElement('li'), label = document.createElement('label'), sel = document.createElement('select'), play = document.createElement('button');
+    sel.id = 'slot' + i; label.htmlFor = sel.id; label.textContent = 'Track ' + (i + 1);
+    for (const s of LIBRARY) { const o = document.createElement('option'); o.value = o.textContent = s.name; sel.append(o); }
+    sel.addEventListener('change', () => { stopPreview(); markCustom(); });
+    play.type = 'button'; play.textContent = '▶'; play.setAttribute('aria-label', 'Preview track ' + (i + 1));
+    play.addEventListener('click', () => preview(i, play));
+    li.append(label, sel, play); $('slots').append(li); selects.push(sel);
+  }
+  choosePack('Original demo');
+}
+function buildBank() {
+  const entries = selects.map(s => { const x = byName[s.value]; return { name: x.name, frames: x.frames, data: unb64(x.sea) }; });
+  const bank = globalThis.FM1Samples.pack(entries);
+  globalThis.FM1Samples.read(bank); // same validation the FM-1 workbench uses
+  return bank;
+}
+globalThis.__buildBank = buildBank; // for testing
+
 $('sounds').addEventListener('click', async () => {
-  if (!W || !globalThis.FM1Samples || !DEMO_BANK) { say('m5', 'The sound loader is not available in this copy of the page.', 'bad'); return; }
+  if (!W || !globalThis.FM1Samples || !LIBRARY) { say('m5', 'The sound loader is not available in this copy of the page.', 'bad'); return; }
+  stopPreview();
   $('sounds').disabled = true; $('flash').disabled = true;
   let lib = null;
   try {
+    const bank = buildBank();
     say('m5', 'Connecting to the FM-1…');
     if (updater) await updater.disconnect().catch(() => {});
     connected = null; enable('s4', false);
     access = access || await navigator.requestMIDIAccess({ sysex: true });
-    const raw = atob(DEMO_BANK), bank = new Uint8Array(raw.length);
-    for (let i = 0; i < raw.length; i++) bank[i] = raw.charCodeAt(i);
-    globalThis.FM1Samples.read(bank);
     lib = new W.Library(access);
     await lib.connect();
     await lib.extensions();
     window.onbeforeunload = () => 'Sounds are being written to the FM-1.';
     await lib.samplesWrite(bank, v => { const pct = Math.round(v * 100); $('bar5').style.width = pct + '%'; say('m5', (v < 0.6 ? 'Writing sounds · ' : 'Checking · ') + pct + '%'); });
     $('bar5').style.width = '100%';
-    say('m5', 'Done. The eight tracks on the FM-1 now show waveforms. Press PLAY or a key to hear them.', 'ok');
+    say('m5', 'Done. Tracks 1–8 now hold: ' + selects.map(s => s.value.toLowerCase()).join(', ') + '.', 'ok');
   } catch (err) {
     say('m5', err.name === 'SecurityError' || err.name === 'NotAllowedError' ? 'MIDI access was blocked. Allow MIDI devices (with system exclusive) for this page in the browser’s site settings.' : en(err.message), 'bad');
   } finally {

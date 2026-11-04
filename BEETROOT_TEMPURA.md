@@ -99,8 +99,13 @@ to make the same self-contained page.
 
 ## Samples
 
-Tracks 1–8 use the FM-1 sample bank (about 19.5 s total, mono, 32 kHz). Load
-WAVs with the workbench's sample manager exactly as for FM1 Open. Any track
+Tracks 1–8 use the FM-1 sample bank (about 19.5 s total, mono, 32 kHz).
+Step 5 of the flasher site loads any 8 of 28 built-in sounds over USB, as
+one of five packs (Original demo, Ambient, Plucked, Voices & air, Rhythm &
+noise) or picked track by track, with a preview in the browser. All 28 are
+synthesized from scratch: `tools/sounds/new_sounds.py` makes the newer 20,
+and `tools/flasher/sound_library.json` holds all 28 encoded for the FM-1.
+Your own WAVs load through the M-VAVE workbench sample manager. Any track
 can instead be set to LIVE IN on the SCL page.
 
 ## Storage note
