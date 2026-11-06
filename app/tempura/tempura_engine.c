@@ -27,13 +27,13 @@ struct tp_chunk { const uint8_t *tag; int32_t index; uint32_t used; int16_t pcm[
  * of runtime heap for Bluetooth, USB and updates) accounts for them. Earlier
  * builds took them from the heap at run time, which could starve the
  * Bluetooth stack on units that reconnect to a phone at power-on. */
-enum { CACHE_SETS = 24 };
+enum { CACHE_SETS = 16 };
 static struct tp_chunk cache[CACHE_SETS * 2];
 static uint32_t cache_clock, decode_count;
 static int16_t silent_chunk[CHUNK];
 
 /* ----------------------------------------------------------------- live */
-enum { LIVE_LEN = 32768, LIVE_MASK = LIVE_LEN - 1, LIVE_PX = LIVE_LEN / 160 };
+enum { LIVE_LEN = 16384, LIVE_MASK = LIVE_LEN - 1, LIVE_PX = LIVE_LEN / 160 };  /* 0.74 s at 22.05 kHz */
 static int16_t live[LIVE_LEN];
 #define live_len ((uint32_t)LIVE_LEN)
 #define live_mask ((uint32_t)LIVE_MASK)
@@ -955,7 +955,7 @@ void tempura_engine_cook(const struct tp_canvas *c)
     unsigned tempo = tempura_midi_clock_bpm();
     float beats = 60.0f / (float)(tempo ? tempo : (unsigned)g[G_BPM]);
     static const float division[9] = {0.0f, 0.25f, 1.0f / 3.0f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 4.0f};
-    f->dly_seconds = sync && sync < 9 ? beats * division[sync] : 0.02f * tp_exp2((float)g[G_DLY_TIME] * (6.0f / 127.0f));
+    f->dly_seconds = sync && sync < 9 ? beats * division[sync] : 0.02f * tp_exp2((float)g[G_DLY_TIME] * (5.2f / 127.0f)); /* 20 ms .. 0.74 s */
     f->dly_feedback = norm(g[G_DLY_FEEDBACK]) * 0.97f;
     f->dly_tone = 400.0f * tp_exp2(norm(g[G_DLY_TONE]) * 5.3f);
     f->dly_return = norm(g[G_DLY_RETURN]);

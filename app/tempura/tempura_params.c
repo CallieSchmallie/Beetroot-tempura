@@ -180,7 +180,7 @@ void tempura_format(const struct tp_param_info *info, int v, char out[12])
     case PK_MS: {
         /* Grain size 4 ms * 2^(v * 9 / 127): 4 .. 2048 ms. Delay time 20 ms * 2^(v*6/127). */
         uint32_t micro = info->name[0] == 'D' ? 20000U : 4000U;
-        unsigned factor = info->name[0] == 'D' ? 1033U : 1050U;
+        unsigned factor = info->name[0] == 'D' ? 1029U : 1050U;
         for (int i = 0; i < v; ++i) micro = micro * factor / 1000U;
         if (micro >= 1000000U) { put_int(out, (int)(micro / 1000000U), 0); append(out, "."); char d[4]; put_int(d, (int)(micro / 100000U % 10U), 0); append(out, d); append(out, "S"); }
         else { put_int(out, (int)(micro / 1000U), 0); append(out, "MS"); }

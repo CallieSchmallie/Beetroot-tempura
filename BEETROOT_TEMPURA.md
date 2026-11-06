@@ -117,9 +117,12 @@ voice library are not touched.
 
 ## Memory and CPU
 
-All of Beetroot Tempura's large buffers (grain cache, delay, reverb, live
-tape) are static, so the SDK's link-time check guarantees the FM-1 keeps at
-least 48 KB of working memory for Bluetooth, USB and updates. The GitHub
+All of Beetroot Tempura's large buffers are static, so the SDK's link-time
+check guarantees the FM-1 keeps at least 48 KB of working memory for
+Bluetooth, USB and updates. They total about 115 KB: grain cache 21 KB, live
+tape 32 KB (0.74 s), delay 32 KB (0.74 s, stored at 11 kHz), reverb 26 KB,
+modulation 4 KB. Version 1.0 took about 175 KB from the runtime heap
+instead, which left Bluetooth roughly 16 KB. The GitHub
 build also runs `tools/ci/check_memory.py`, which reports that figure and
 fails if any of Beetroot Tempura's audio code lies outside internal SRAM.
 
@@ -140,6 +143,7 @@ hard. GLO → SYSTEM shows CPU, the grain limit and an overload count.
 - Faster sample decoding (bit-exact) and a faster grain loop.
 - Output limiter; smoother feedback saturation; denormal and NaN guards.
 - Safe mode: hold HOME at power-on.
+- To fit the memory budget, the live tape and the longest delay are now 0.74 s.
 
 ## What to check on first boot
 
