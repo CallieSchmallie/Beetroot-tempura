@@ -11,7 +11,7 @@ static int32_t receive[2][FM1_BLOCK_WORDS] DMA_ALIGNED;
 static int32_t transmit[2][FM1_BLOCK_WORDS] DMA_ALIGNED;
 static int32_t rendered[FM1_BLOCK_WORDS] DMA_ALIGNED;
 static struct fm1_audio_stats statistics;
-static uint32_t block_ticks, previous_tick;
+static uint32_t block_ticks, previous_tick, block_start;
 static uint8_t initialized, previous_valid;
 static volatile unsigned mute_depth;
 
@@ -19,6 +19,8 @@ static inline __attribute__((always_inline)) uint32_t elapsed(uint32_t start, ui
 {
     return end >= start ? end - start : end + FM1_AUDIO_TIMER_PERIOD + 1U - start;
 }
+/* Time used so far in this block, for the engine's overrun guard. */
+static FM1_AUDIO_CODE uint32_t block_used(void) { return elapsed(block_start, FM1_AUDIO_TIMER_COUNT); }
 /* No libc calls in the DMA commit window, including during Flash writes. */
 static FM1_AUDIO_CODE void fm1_audio_copy(volatile int32_t *out, const int32_t *in)
 {
@@ -40,6 +42,7 @@ FM1_AUDIO_CODE __attribute__((interrupt(""))) void fm1_audio_irq(void)
     if (interval < block_ticks - (block_ticks >> 3)) { ++statistics.short_intervals; return; }
     if (interval > block_ticks + (block_ticks >> 3)) { ++statistics.overruns; return; }
     half = fm1_audio_free_half();
+    block_start = start;
     /* Beetroot Tempura renders the instrument; APP mixes external audio. */
     if (tempura_render(rendered, FM1_BLOCK_FRAMES) != 0) {
         ++statistics.overruns;
@@ -88,6 +91,7 @@ int fm1_audio_start(void)
     if (!clock) return -1;
     block_ticks = (uint32_t)((uint64_t)clock * FM1_BLOCK_FRAMES / FM1_AUDIO_HARDWARE_RATE);
     if (!block_ticks) return -1;
+    tempura_block_clock(block_used, block_ticks);
     memset(receive, 0, sizeof receive);
     memset(transmit, 0, sizeof transmit);
     fm1_output_reset();

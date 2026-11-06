@@ -34,6 +34,7 @@ independent implementation and shares no code or assets with Tempera.
 | HOME, EDIT, ENV, LFO, FX, SCL, GLO, SAVE | Canvas, grain pages, envelope, filter/LFO, effects, track, settings (keyboard, MIDI, live input, Bluetooth, system), canvases |
 | REC + PLAY | Freeze / unfreeze the live input |
 | HOME + PLAY | All sound off |
+| Hold HOME at power-on | Safe mode: no sound, nothing saved, USB update path ready for reflashing |
 
 If the encoders on your unit are in a different order than SELECT=E0,
 PAGE=E1, K1–K4=E2–E5, MAIN=E6, swap them at the top of `handle_encoders()` in
@@ -116,10 +117,29 @@ voice library are not touched.
 
 ## Memory and CPU
 
-Larger buffers (grain cache, delay, reverb, live tape) are allocated after
-boot while keeping a heap reserve for Bluetooth and USB; GLO → SYSTEM shows
-what was obtained. A small built-in cache guarantees sound if the heap is
-tight. The grain count adapts to measured CPU load (up to 48 grains).
+All of Beetroot Tempura's large buffers (grain cache, delay, reverb, live
+tape) are static, so the SDK's link-time check guarantees the FM-1 keeps at
+least 48 KB of working memory for Bluetooth, USB and updates. The GitHub
+build also runs `tools/ci/check_memory.py`, which reports that figure and
+fails if any of Beetroot Tempura's audio code lies outside internal SRAM.
+
+The audio engine has a hard time budget. It stops starting new grains once
+35% of the 2.9 ms block is used and sheds grains past 58%. It decodes at
+most 12 sample chunks per block, and when that runs out a grain replays its
+current chunk instead of dropping to silence. The grain limit (up to 40)
+adapts to measured load. A limiter keeps a redlined mix below full scale,
+and the delay, reverb and modulation feedback saturate smoothly. The CPU
+meter's outline turns amber while the limiter works and red when it works
+hard. GLO → SYSTEM shows CPU, the grain limit and an overload count.
+
+## Changes in 1.1
+
+- Fixed crackling and freezing at high CPU load (the red CPU meter).
+- Fixed a crash at power-on on units that reconnect to a phone over Bluetooth
+  (buffers no longer come from the memory the Bluetooth stack needs).
+- Faster sample decoding (bit-exact) and a faster grain loop.
+- Output limiter; smoother feedback saturation; denormal and NaN guards.
+- Safe mode: hold HOME at power-on.
 
 ## What to check on first boot
 

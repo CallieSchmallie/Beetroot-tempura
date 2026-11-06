@@ -471,7 +471,8 @@ static void draw_header(void)
     if (tempura_midi_activity()) gfx_fill(213, 6, 3, 3, C_AMBER);
     struct tp_stats st; tempura_stats(&st);
     unsigned cpu = st.cpu > 100 ? 100 : st.cpu;
-    gfx_rect(219, 4, 19, 7, C_DIM);
+    /* Outline turns amber while the output limiter works, red when it works hard. */
+    gfx_rect(219, 4, 19, 7, st.limiting == 2 ? C_BEET : st.limiting ? C_AMBER : C_DIM);
     gfx_fill(220, 5, (int)(cpu * 17U / 100U), 5, cpu > 80 ? C_BEET : C_GREEN);
 }
 
@@ -658,7 +659,8 @@ static void draw_system(void)
         tempura_format(tempura_global_info(G_VOLUME), st.grain_limit, n); strcat(line, n);
         gfx_text(8, 116, line, 1, C_TEXT);
         strcpy(line, "CPU ");
-        tempura_format(tempura_global_info(G_VOLUME), st.cpu, n); strcat(line, n); strcat(line, "%");
+        tempura_format(tempura_global_info(G_VOLUME), st.cpu, n); strcat(line, n); strcat(line, "%  OVERLOADS ");
+        tempura_format(tempura_global_info(G_VOLUME), st.overloads, n); strcat(line, n);
         gfx_text(8, 128, line, 1, st.cpu > 80 ? C_BEET : C_TEXT);
         unsigned clock = tempura_midi_clock_bpm();
         strcpy(line, "MIDI CLOCK ");
@@ -729,7 +731,21 @@ static void boot_splash(void)
     }
     gfx_text(120 - gfx_text_width("BEETROOT", 2) / 2, 168, "BEETROOT", 2, C_TEXT);
     gfx_text(120 - gfx_text_width("TEMPURA", 2) / 2, 190, "TEMPURA", 2, C_AMBER);
-    gfx_text(120 - gfx_text_width("GRANULAR CANVAS FOR FM-1", 1) / 2, 216, "GRANULAR CANVAS FOR FM-1", 1, C_DIM);
+    gfx_text(120 - gfx_text_width("GRANULAR CANVAS FOR FM-1", 1) / 2, 214, "GRANULAR CANVAS FOR FM-1", 1, C_DIM);
+    gfx_text(120 - gfx_text_width("HOLD HOME FOR SAFE MODE", 1) / 2, 228, "HOLD HOME FOR SAFE MODE", 1, RGB(90, 82, 96));
+}
+
+static unsigned safe;
+static void safe_screen(void)
+{
+    gfx_fill(0, gfx_top, GFX_W, GFX_BAND, C_BG);
+    gfx_text(120 - gfx_text_width("SAFE MODE", 2) / 2, 60, "SAFE MODE", 2, C_AMBER);
+    static const char *const lines[] = {
+        "SOUND IS OFF. NOTHING IS SAVED.", "", "TO REINSTALL OR GO BACK:",
+        "CONNECT USB AND OPEN THE", "FLASHER PAGE OR M-VAVE WORKBENCH.", "", "POWER OFF AND ON TO LEAVE.",
+    };
+    for (unsigned i = 0; i < sizeof lines / sizeof lines[0]; ++i)
+        gfx_text(120 - gfx_text_width(lines[i], 1) / 2, 100 + (int)i * 14, lines[i], 1, i == 2 ? C_TEXT : C_DIM);
 }
 
 /* ================================================================ entry */
@@ -754,9 +770,19 @@ void tempura_ui_control(void)
     uint32_t now = fm1_millis();
     (void)groove_master_update(c.knob);
 
+    if (safe) { gfx_pump(safe_screen, 8); return; }
     if (!booted) {
         gfx_pump(boot_splash, 8);
-        if (gfx_frame_busy() || now - boot_ms < 900U) { prev_buttons = c.buttons; prev_keys = 0; return; }
+        if (c.buttons & BTN(B_HOME)) {
+            /* Safe mode: no sound, no Tempura Bluetooth or canvas work. The
+             * FM-1's own USB update path stays fully available for reflashing. */
+            safe = 1;
+            tempura_set_safe_mode(1);
+            gfx_init();
+            gfx_request_frame();
+            return;
+        }
+        if (gfx_frame_busy() || now - boot_ms < 1200U) { prev_buttons = c.buttons; prev_keys = 0; return; }
         booted = 1;
         tempura_engine_allocate();
         (void)fm1_bluetooth_configure(FM1_BT_AUDIO | FM1_BT_MIDI);

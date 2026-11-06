@@ -38,6 +38,12 @@ label.check input{margin-top:3px;accent-color:var(--beet)}
 .bar{height:10px;border-radius:5px;background:var(--raised);overflow:hidden}
 .bar div{height:100%;width:0;background:linear-gradient(90deg,var(--beet),var(--amber));transition:width .2s}
 .note{font-size:12px;color:var(--muted);border-left:2px solid var(--line);padding-left:10px}
+.notice{border-color:var(--amber)}
+.notice h2{color:var(--amber)}
+.notice details{color:var(--ink)}
+.notice summary{cursor:pointer;font-weight:600}
+.notice ol{margin:8px 0 0;padding-left:20px;display:grid;gap:6px;color:var(--muted)}
+.notice b{color:var(--ink)}
 .packs{display:flex;flex-wrap:wrap;gap:6px}
 .packs button{padding:7px 11px;font-size:12px}
 .packs button[aria-pressed="true"]{border-color:var(--beet);background:#4a1c32}
@@ -58,6 +64,20 @@ label.check input{margin-top:3px;accent-color:var(--beet)}
 </header>
 
 <p class="note" id="support"></p>
+
+<section class="step notice" id="news">
+  <h2>Version 1.1: stability fix</h2>
+  <p>Version 1.0 could crackle and freeze when the CPU meter went red, and could fail to start on an FM-1 that reconnects to a phone over Bluetooth at power-on. 1.1 keeps the audio engine inside its time budget, leaves the FM-1's Bluetooth and USB memory untouched, and adds a limiter. Everyone on 1.0 should install 1.1.</p>
+  <details>
+    <summary>An FM-1 won't start or keeps restarting</summary>
+    <ol>
+      <li>Turn off Bluetooth on every phone, tablet or computer the FM-1 has been paired with, so nothing reconnects to it at power-on.</li>
+      <li>Switch the FM-1 off, then on again while holding <b>HOME</b>. On 1.1 this opens a silent safe mode; on 1.0 it simply starts without the phone connection.</li>
+      <li>Connect it by USB and install 1.1 below, or M-VAVE's own firmware from their workbench at open.m-vave.com.</li>
+      <li>If the screen stays black and Connect finds nothing, tick "replace other firmware" in step 2 and try Connect again with the FM-1 plugged in. If it still isn't found, contact M-VAVE support: they have a recovery tool for the FM-1.</li>
+    </ol>
+  </details>
+</section>
 
 <section class="step" id="s1">
   <h2><b>1</b> <span id="s1title">Choose the firmware</span></h2>

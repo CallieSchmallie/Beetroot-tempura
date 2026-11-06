@@ -107,6 +107,12 @@ jobs:
         # and checks SRAM, heap, BLE and USB linkage before packaging.
         run: ./sdk/Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN
 
+      - name: Check memory and audio code placement
+        shell: pwsh
+        run: |
+          & "$env:FM1_PI32_TOOLCHAIN\bin\llvm-nm.exe" --print-size build/dx7/sdk.elf | Out-File -Encoding utf8 build/dx7/nm.txt
+          python tools/ci/check_memory.py build/dx7/nm.txt
+
       - name: Report largest code on failure
         if: failure()
         shell: pwsh

@@ -15,11 +15,11 @@
 #include "fm1.h"
 
 #define TEMPURA_NAME    "BEETROOT TEMPURA"
-#define TEMPURA_VERSION "1.0"
+#define TEMPURA_VERSION "1.1"
 
 enum {
     TP_TRACKS = 8, TP_ROWS = 8, TP_EMITTERS = 4, TP_VOICES = 16,
-    TP_MAX_GRAINS = 48, TP_SLOTS = 8, TP_SOURCE_LIVE = 8,
+    TP_MAX_GRAINS = 40, TP_SLOTS = 8, TP_SOURCE_LIVE = 8,
     TP_SAMPLE_RATE = 32000, TP_LIVE_RATE = 22050
 };
 
@@ -103,6 +103,12 @@ FM1_AUDIO_CODE void tempura_live_feed(const int16_t *bt, const int32_t *usb, uns
 FM1_AUDIO_CODE unsigned tempura_monitor_gain_q7(void);
 /* Audio ISR: measured render time for the adaptive grain limit. */
 FM1_AUDIO_CODE void tempura_cpu_report(uint32_t used_ticks, uint32_t block_ticks);
+/* Audio start: how to read the time used so far in the current block, and
+ * the block period in the same ticks. Lets the engine stop before overrun. */
+void tempura_block_clock(uint32_t (*used_ticks)(void), uint32_t block_ticks);
+/* Safe mode (HOME held at power-on): render silence, do no other work. */
+void tempura_set_safe_mode(unsigned on);
+unsigned tempura_safe_mode(void);
 
 /* Bind slot audio (SEA5 mono, 32 kHz). Control task; data stays mapped. */
 void tempura_bind_slot(unsigned slot, const uint8_t *data, unsigned bytes, unsigned frames, const char *name);
@@ -126,7 +132,7 @@ unsigned tempura_grain_snapshot(struct tp_grain_view *out, unsigned max);
 uint8_t tempura_track_peak(unsigned track, unsigned pixel); /* 0..255 per 1/160 of the track */
 unsigned tempura_live_head(void);                             /* 0..159 */
 unsigned tempura_voice_mask(void);                            /* active voices per emitter, 4 bits each */
-struct tp_stats { uint8_t cpu, grains, grain_limit, voices; uint32_t heap_cache, heap_live, heap_delay, heap_reverb, decodes; };
+struct tp_stats { uint8_t cpu, grains, grain_limit, voices, limiting, overloads; uint32_t heap_cache, heap_live, heap_delay, heap_reverb, decodes, shed, starved; };
 void tempura_stats(struct tp_stats *s);
 void tempura_peaks_poll(const struct tp_canvas *c); /* control task: incremental waveform overview */
 

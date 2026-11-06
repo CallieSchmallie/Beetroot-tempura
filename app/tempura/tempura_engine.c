@@ -23,20 +23,23 @@ static struct tp_slot slots[TP_SLOTS];
 
 /* ---------------------------------------------------------------- cache */
 struct tp_chunk { const uint8_t *tag; int32_t index; uint32_t used; int16_t pcm[CHUNK]; };
-/* A small static cache guarantees sound even if the heap is tight; a larger
- * one replaces it after boot when memory allows. */
-static struct tp_chunk cache_static[8];
-static struct tp_chunk *cache = cache_static;
-static unsigned cache_mask = 3; /* sets - 1; two ways per set */
+/* All large buffers are static so the SDK's link-time check (at least 48 KB
+ * of runtime heap for Bluetooth, USB and updates) accounts for them. Earlier
+ * builds took them from the heap at run time, which could starve the
+ * Bluetooth stack on units that reconnect to a phone at power-on. */
+enum { CACHE_SETS = 24 };
+static struct tp_chunk cache[CACHE_SETS * 2];
 static uint32_t cache_clock, decode_count;
 static int16_t silent_chunk[CHUNK];
 
 /* ----------------------------------------------------------------- live */
-static int16_t *live;
-static uint32_t live_len, live_mask, live_bytes;
+enum { LIVE_LEN = 32768, LIVE_MASK = LIVE_LEN - 1, LIVE_PX = LIVE_LEN / 160 };
+static int16_t live[LIVE_LEN];
+#define live_len ((uint32_t)LIVE_LEN)
+#define live_mask ((uint32_t)LIVE_MASK)
 static volatile uint32_t live_write;
 static int32_t live_pair;
-static unsigned live_odd, live_px_count, live_px_size, live_px;
+static unsigned live_odd, live_px_count, live_px;
 static uint16_t live_px_peak;
 static uint8_t live_peaks[160];
 
@@ -70,7 +73,23 @@ struct tp_grain {
     struct tp_reader a, b;
 };
 static struct tp_grain grains[TP_MAX_GRAINS];
-static unsigned grain_limit = TP_MAX_GRAINS, grain_count;
+static unsigned grain_limit = 24, grain_count;
+
+/* CPU budget. The audio interrupt must finish well inside its 2.9 ms block or
+ * the sound crackles and the screen, panel and USB stop getting time. */
+enum {
+    DECODES_PER_BLOCK = 12,     /* sample chunk decodes allowed per block */
+    SPAWN_DECODE_LIMIT = 6,     /* no new grains once this many decodes ran */
+    SPAWN_STOP_PCT = 35,        /* no new grains past this share of the block */
+    GRAIN_STOP_PCT = 58,        /* shed remaining grains past this share */
+};
+static uint32_t (*clock_used)(void);
+static uint32_t clock_pct_ticks;            /* block_ticks / 100 */
+static unsigned decodes_block, safe_mode, starved_block;
+static volatile uint8_t stat_limiting, stat_overloads;
+static volatile uint32_t stat_shed, stat_starved;
+static float limiter_gain = 1.0f;
+TP_INLINE int past(unsigned pct) { return clock_used && clock_used() > clock_pct_ticks * pct; }
 static float window_table[6][257];
 static uint32_t rng = 0x9e3779b9U;
 
@@ -90,7 +109,6 @@ static volatile unsigned ev_write, ev_read;
 
 /* --------------------------------------------------------------- stats */
 static volatile uint8_t stat_cpu, stat_voices;
-static uint32_t heap_cache;
 static float bpm = 110.0f;
 
 /* Plain word loop: audio code must not depend on Flash-resident libc. */
@@ -132,45 +150,17 @@ void tempura_engine_init(void)
     tp_fx_init();
 }
 
-/* Keep this much heap free for Bluetooth, USB and file transfers. */
-enum { TP_HEAP_RESERVE = 24 * 1024 };
-void *tp_alloc_reserved(size_t bytes)
-{
-    void *reserve = malloc(TP_HEAP_RESERVE);
-    if (!reserve) return NULL;
-    void *p = calloc(1, bytes);
-    free(reserve);
-    return p;
-}
 void tempura_engine_allocate(void)
 {
-    heap_cache = sizeof cache_static;
-    if (cache == cache_static) {
-        static const unsigned sets_try[] = {16, 8};
-        for (unsigned i = 0; i < 2 && cache == cache_static; ++i) {
-            struct tp_chunk *c = tp_alloc_reserved(sizeof(struct tp_chunk) * 2U * sets_try[i]);
-            if (c) {
-                tempura_lock();
-                cache = c; cache_mask = sets_try[i] - 1U;
-                tempura_unlock();
-                heap_cache = (uint32_t)(sizeof(struct tp_chunk) * 2U * sets_try[i]);
-            }
-        }
-    }
-    tp_fx_allocate();
-    if (!live) {
-        static const uint32_t len_try[] = {32768, 16384, 8192, 4096};
-        for (unsigned i = 0; i < 4 && !live; ++i) {
-            int16_t *p = tp_alloc_reserved(len_try[i] * sizeof(int16_t));
-            if (p) {
-                tempura_lock();
-                live = p; live_len = len_try[i]; live_mask = live_len - 1U;
-                live_px_size = live_len / 160U; live_bytes = live_len * 2U;
-                tempura_unlock();
-            }
-        }
-    }
+    /* Buffers are static now; kept so callers need not change. */
 }
+void tempura_block_clock(uint32_t (*used_ticks)(void), uint32_t block_ticks)
+{
+    clock_pct_ticks = block_ticks / 100U;
+    clock_used = clock_pct_ticks ? used_ticks : NULL;
+}
+void tempura_set_safe_mode(unsigned on) { safe_mode = on != 0; }
+unsigned tempura_safe_mode(void) { return safe_mode; }
 
 /* ============================================================== slots */
 void tempura_bind_slot(unsigned slot, const uint8_t *data, unsigned bytes, unsigned frames, const char *name)
@@ -182,7 +172,7 @@ void tempura_bind_slot(unsigned slot, const uint8_t *data, unsigned bytes, unsig
     slots[slot].frames = data ? frames : 0;
     slots[slot].chunks = data ? (frames + CHUNK - 1U) / CHUNK : 0;
     /* Any cached chunk of a replaced sample must not be reused. */
-    if (cache) for (unsigned i = 0; i <= cache_mask * 2U + 1U; ++i) cache[i].tag = NULL;
+    for (unsigned i = 0; i < CACHE_SETS * 2U; ++i) cache[i].tag = NULL;
     for (unsigned g = 0; g < TP_MAX_GRAINS; ++g) grains[g].active = 0;
     grain_count = 0;
     tempura_unlock();
@@ -201,18 +191,24 @@ const char *tempura_slot_name(unsigned slot)
 }
 unsigned tempura_slot_frames(unsigned slot) { return slot < TP_SLOTS ? slots[slot].frames : 0; }
 
-static TP_AUDIO const int16_t *cache_get(unsigned slot, int32_t index)
+static TP_AUDIO int tp_sea5_decode(const uint8_t *c, int16_t *pcm);
+/* Returns the decoded chunk, or NULL when this block's decode budget is used
+ * up (the caller then keeps what it has rather than dropping to silence). */
+static TP_AUDIO const int16_t *cache_try(unsigned slot, int32_t index)
 {
     const struct tp_slot *s = &slots[slot];
-    if (!s->data || index < 0 || (uint32_t)index >= s->chunks || !cache) return silent_chunk;
+    if (!s->data || index < 0 || (uint32_t)index >= s->chunks) return silent_chunk;
     uint32_t h = ((uint32_t)(uintptr_t)s->data >> 4) * 2654435761U ^ (uint32_t)index * 40503U;
     h ^= h >> 15;
-    struct tp_chunk *way = &cache[(h & cache_mask) * 2U];
+    struct tp_chunk *way = &cache[(h % CACHE_SETS) * 2U];
     ++cache_clock;
     if (way[0].tag == s->data && way[0].index == index) { way[0].used = cache_clock; return way[0].pcm; }
     if (way[1].tag == s->data && way[1].index == index) { way[1].used = cache_clock; return way[1].pcm; }
+    /* A miss costs a full chunk decode; cap them so one block stays bounded. */
+    if (decodes_block >= DECODES_PER_BLOCK || past(GRAIN_STOP_PCT + 8U)) { ++stat_starved; starved_block = 1; return NULL; }
+    ++decodes_block;
     struct tp_chunk *victim = (int32_t)(way[0].used - way[1].used) <= 0 ? &way[0] : &way[1];
-    if (fm1_sea_decode(s->data + (uint32_t)index * CHUNK_BYTES, CHUNK_BYTES, 5, tp_sea_dqt, victim->pcm)) {
+    if (tp_sea5_decode(s->data + (uint32_t)index * CHUNK_BYTES, victim->pcm)) {
         victim->tag = NULL;
         return silent_chunk;
     }
@@ -220,6 +216,57 @@ static TP_AUDIO const int16_t *cache_get(unsigned slot, int32_t index)
     victim->tag = s->data; victim->index = index; victim->used = cache_clock;
     return victim->pcm;
 }
+
+/* Fast SEA5 chunk decoder (bit-exact with fm1_sea_decode, see tests).
+ * Unpacks eight 5-bit codes from every five bytes instead of one bit at a
+ * time; this is the hottest path in the engine. */
+static TP_AUDIO int tp_sea5_decode(const uint8_t *c, int16_t *pcm)
+{
+    if (c[0] != 1 || c[1] != 0x45 || c[2] != 20 || c[3] != 0x5a) return -1;
+    uint8_t codes[CHUNK];
+    const uint8_t *b = c + 28;
+    for (unsigned k = 0; k < CHUNK; k += 8, b += 5) {
+        unsigned b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3], b4 = b[4];
+        codes[k]     = (uint8_t)(b0 >> 3);
+        codes[k + 1] = (uint8_t)(((b0 & 7U) << 2) | (b1 >> 6));
+        codes[k + 2] = (uint8_t)((b1 >> 1) & 31U);
+        codes[k + 3] = (uint8_t)(((b1 & 1U) << 4) | (b2 >> 4));
+        codes[k + 4] = (uint8_t)(((b2 & 15U) << 1) | (b3 >> 7));
+        codes[k + 5] = (uint8_t)((b3 >> 2) & 31U);
+        codes[k + 6] = (uint8_t)(((b3 & 3U) << 3) | (b4 >> 5));
+        codes[k + 7] = (uint8_t)(b4 & 31U);
+    }
+    int32_t h0, h1, h2, h3, w0, w1, w2, w3;
+#define SEED(i) ((int32_t)(int16_t)(uint16_t)(c[4 + (i) * 2] | ((unsigned)c[5 + (i) * 2] << 8)))
+    h0 = SEED(0); h1 = SEED(1); h2 = SEED(2); h3 = SEED(3);
+    w0 = SEED(4); w1 = SEED(5); w2 = SEED(6); w3 = SEED(7);
+#undef SEED
+#define CLAMP16(v) ((v) > 32767 ? 32767 : (v) < -32768 ? -32768 : (v))
+    for (unsigned g = 0; g < 16; ++g) {
+        unsigned scale = (c[20 + g / 2] >> ((g & 1) ? 0 : 4)) & 15U;
+        const int16_t *dq = tp_sea_dqt + (scale << 5);
+        const uint8_t *cd = codes + g * 20;
+        int16_t *out = pcm + g * 20;
+        for (unsigned i = 0; i < 20; ++i) {
+            int64_t sum = (int64_t)h0 * w0 + (int64_t)h1 * w1 + (int64_t)h2 * w2 + (int64_t)h3 * w3;
+            int32_t residual = dq[cd[i]];
+            int32_t value = (int32_t)(sum >> 13) + residual;
+            value = CLAMP16(value);
+            int32_t delta = residual >> 4;
+            w0 += h0 < 0 ? -delta : delta; w0 = CLAMP16(w0);
+            w1 += h1 < 0 ? -delta : delta; w1 = CLAMP16(w1);
+            w2 += h2 < 0 ? -delta : delta; w2 = CLAMP16(w2);
+            w3 += h3 < 0 ? -delta : delta; w3 = CLAMP16(w3);
+            h0 = h1; h1 = h2; h2 = h3; h3 = value;
+            out[i] = (int16_t)value;
+        }
+    }
+#undef CLAMP16
+    return 0;
+}
+#ifdef FM1_HOST_TEST
+int tempura_test_decode(const uint8_t *chunk, int16_t *pcm) { return tp_sea5_decode(chunk, pcm); }
+#endif
 
 /* ============================================================== events */
 static int push_event(const struct tp_event *e)
@@ -367,10 +414,10 @@ static TP_AUDIO int reader_start(struct tp_reader *r, unsigned col, float y01, f
         uint32_t frame = (uint32_t)(pos01 * (float)(s->frames - 1U));
         r->kind = 1; r->slot = t->source;
         r->chunk = (int32_t)(frame / CHUNK); r->off = (int32_t)(frame % CHUNK);
-        r->pcm = cache_get(r->slot, r->chunk);
+        r->pcm = cache_try(r->slot, r->chunk);
+        if (!r->pcm) { r->kind = 0; return -1; }
         rate = (float)TP_SAMPLE_RATE * (1.0f / 44100.0f);
     } else {
-        if (!live) { r->kind = 0; return -1; }
         r->kind = 2;
         r->off = (int32_t)(pos01 * (float)(live_len - 1U));
         rate = (float)TP_LIVE_RATE * (1.0f / 44100.0f);
@@ -387,7 +434,7 @@ TP_INLINE float reader_next(struct tp_reader *r)
     if (r->kind == 1) {
         s0 = (float)r->pcm[r->off];
         if (r->off + 1 < CHUNK) s1 = (float)r->pcm[r->off + 1];
-        else s1 = (float)cache_get(r->slot, r->chunk + 1)[0];
+        else { const int16_t *n = cache_try(r->slot, r->chunk + 1); s1 = n ? (float)n[0] : s0; }
     } else if (r->kind == 2) {
         s0 = (float)live[(uint32_t)r->off & live_mask];
         s1 = (float)live[(uint32_t)(r->off + 1) & live_mask];
@@ -399,18 +446,26 @@ TP_INLINE float reader_next(struct tp_reader *r)
         if (r->frac >= 65536) { r->frac -= 65536; ++whole; }
         r->off += whole;
         if (r->kind == 1 && r->off >= CHUNK) {
+            int32_t was = r->chunk;
             while (r->off >= CHUNK) { r->off -= CHUNK; ++r->chunk; }
             if ((uint32_t)r->chunk >= slots[r->slot].chunks) r->kind = 0;
-            else r->pcm = cache_get(r->slot, r->chunk);
+            else {
+                const int16_t *n = cache_try(r->slot, r->chunk);
+                if (n) r->pcm = n; else r->chunk = was; /* no budget: replay this chunk */
+            }
         }
     } else {
         r->frac -= fr;
         if (r->frac < 0) { r->frac += 65536; ++whole; }
         r->off -= whole;
         if (r->kind == 1 && r->off < 0) {
+            int32_t was = r->chunk;
             while (r->off < 0) { r->off += CHUNK; --r->chunk; }
             if (r->chunk < 0) r->kind = 0;
-            else r->pcm = cache_get(r->slot, r->chunk);
+            else {
+                const int16_t *n = cache_try(r->slot, r->chunk);
+                if (n) r->pcm = n; else r->chunk = was;
+            }
         }
     }
     return y;
@@ -442,6 +497,7 @@ static TP_AUDIO struct tp_grain *grain_slot(void)
 
 static TP_AUDIO void spawn(struct tp_voice *v, unsigned vi, unsigned delay)
 {
+    if (decodes_block >= SPAWN_DECODE_LIMIT) { ++stat_shed; return; }
     unsigned e = v->emitter;
     const struct tp_cooked_emitter *ce = &tp_cook.e[e];
     unsigned cell;
@@ -528,14 +584,54 @@ static TP_AUDIO void render_grain(struct tp_grain *g)
     else e0 = e1 = g->env_last;
     float *l = bus_l[g->emitter], *r = bus_r[g->emitter];
     /* Other grains may have evicted our chunk since the last block. */
-    if (g->a.kind == 1) g->a.pcm = cache_get(g->a.slot, g->a.chunk);
-    if (g->b.kind == 1) g->b.pcm = cache_get(g->b.slot, g->b.chunk);
+    if (g->a.kind == 1) { const int16_t *p = cache_try(g->a.slot, g->a.chunk); if (p) g->a.pcm = p; }
+    if (g->b.kind == 1) { const int16_t *p = cache_try(g->b.slot, g->b.chunk); if (p) g->b.pcm = p; }
     const float *win = window_table[g->shape];
     unsigned i = g->delay;
     g->delay = 0;
     float env = e0 + (e1 - e0) * (float)i * (1.0f / FM1_BLOCK_FRAMES);
     float env_step = (e1 - e0) * (1.0f / FM1_BLOCK_FRAMES);
     float wa = 1.0f - g->blend, wb = g->blend;
+    /* Fast path: one sample reader moving forward (most grains). Runs in
+     * registers between chunk boundaries; same arithmetic as below. */
+#ifndef TP_NO_FASTPATH
+    if (g->a.kind == 1 && g->a.dir >= 0 && wb <= 0.0f) {
+        struct tp_reader *rd = &g->a;
+        uint32_t phase = g->phase, inc = g->inc, remain = g->remain;
+        int32_t off = rd->off, frac = rd->frac;
+        const int32_t whole0 = (int32_t)(rd->step >> 16), fr0 = (int32_t)(rd->step & 0xffffU);
+        const int16_t *pcm = rd->pcm;
+        float gl = g->gl * wa, gr = g->gr * wa;
+        for (; i < FM1_BLOCK_FRAMES && remain; ++i, --remain) {
+            unsigned idx = phase >> 24;
+            float wf = (float)((phase >> 8) & 0xffffU) * (1.0f / 65536.0f);
+            float w = win[idx] + (win[idx + 1] - win[idx]) * wf;
+            phase += inc;
+            float s0 = (float)pcm[off];
+            float s1;
+            if (off + 1 < CHUNK) s1 = (float)pcm[off + 1];
+            else { const int16_t *n = cache_try(rd->slot, rd->chunk + 1); s1 = n ? (float)n[0] : s0; }
+            float y = (s0 + (s1 - s0) * (float)frac * (1.0f / 65536.0f)) * w * env;
+            env += env_step;
+            l[i] += y * gl;
+            r[i] += y * gr;
+            frac += fr0;
+            int32_t adv = whole0;
+            if (frac >= 65536) { frac -= 65536; ++adv; }
+            off += adv;
+            if (off >= CHUNK) {
+                int32_t was = rd->chunk;
+                while (off >= CHUNK) { off -= CHUNK; ++rd->chunk; }
+                if ((uint32_t)rd->chunk >= slots[rd->slot].chunks) { rd->kind = 0; --remain; break; }
+                const int16_t *n = cache_try(rd->slot, rd->chunk);
+                if (n) pcm = n; else rd->chunk = was; /* no budget: replay this chunk */
+            }
+        }
+        g->phase = phase; g->remain = remain; rd->off = off; rd->frac = frac; rd->pcm = pcm;
+        if (!g->remain || g->a.kind == 0) { g->active = 0; --grain_count; }
+        return;
+    }
+#endif
     for (; i < FM1_BLOCK_FRAMES && g->remain; ++i, --g->remain) {
         unsigned idx = g->phase >> 24;
         float fr = (float)((g->phase >> 8) & 0xffffU) * (1.0f / 65536.0f);
@@ -643,6 +739,10 @@ static TP_AUDIO void finish_emitters(void)
                 l[i] = tp_svf_run(&filter_state[e][0], &c, l[i], ce->filter);
                 r[i] = tp_svf_run(&filter_state[e][1], &c, r[i], ce->filter);
             }
+            for (unsigned k = 0; k < 2; ++k) {
+                filter_state[e][k].ic1 = tp_flush(filter_state[e][k].ic1);
+                filter_state[e][k].ic2 = tp_flush(filter_state[e][k].ic2);
+            }
         }
         float step = (gain - g0) * (1.0f / FM1_BLOCK_FRAMES), gg = g0;
         float dry = ce->dry, sm = ce->send_mod, sd = ce->send_delay, sr = ce->send_reverb;
@@ -657,16 +757,14 @@ static TP_AUDIO void finish_emitters(void)
     }
 }
 
-TP_INLINE float soft_clip(float x)
-{
-    if (x > 1.5f) return 1.0f;
-    if (x < -1.5f) return -1.0f;
-    return x - x * x * x * (4.0f / 27.0f);
-}
-
 TP_AUDIO int tempura_render(int32_t *output, unsigned frames)
 {
     if (!output || frames != FM1_BLOCK_FRAMES) return -1;
+    if (safe_mode) {
+        for (unsigned i = 0; i < 2U * FM1_BLOCK_FRAMES; ++i) output[i] = 0;
+        return 0;
+    }
+    decodes_block = 0; starved_block = 0;
     process_events();
     const float block_s = (float)FM1_BLOCK_FRAMES / 44100.0f;
     for (unsigned e = 0; e < TP_EMITTERS; ++e) {
@@ -681,16 +779,54 @@ TP_AUDIO int tempura_render(int32_t *output, unsigned frames)
     tp_zero(dly_l, sizeof dly_l); tp_zero(dly_r, sizeof dly_r);
     tp_zero(rev_l, sizeof rev_l); tp_zero(rev_r, sizeof rev_r);
     tp_zero(out_l, sizeof out_l); tp_zero(out_r, sizeof out_r);
-    spawn_grains();
-    for (unsigned i = 0; i < TP_MAX_GRAINS; ++i)
-        if (grains[i].active) render_grain(&grains[i]);
+    if (!past(SPAWN_STOP_PCT)) spawn_grains();
+    else ++stat_shed;
+    /* Render grains until the time budget runs out; shed the rest rather
+     * than overrun the block. The grain limit then drops (see cpu_report). */
+    unsigned rendered = 0, shed = 0;
+    for (unsigned i = 0; i < TP_MAX_GRAINS; ++i) {
+        struct tp_grain *g = &grains[i];
+        if (!g->active) continue;
+        if (shed || ((rendered & 1U) && past(GRAIN_STOP_PCT))) {
+            g->active = 0; --grain_count; ++shed;
+            continue;
+        }
+        render_grain(g);
+        ++rendered;
+    }
+    /* Grains needed more decoding than the budget allows: fewer grains. */
+    if (starved_block && grain_limit > 4U) --grain_limit;
+    if (shed) {
+        stat_shed += shed;
+        if (stat_overloads < 255U) ++stat_overloads;
+        unsigned keep = rendered > 6U ? rendered - 2U : 4U;
+        if (keep < grain_limit) grain_limit = keep;
+    }
     finish_emitters();
     tp_fx_render(mod_l, mod_r, dly_l, dly_r, rev_l, rev_r, out_l, out_r, FM1_BLOCK_FRAMES);
-    float vol = tp_cook.fx.volume;
+
+    /* Output limiter: instant attack, ~110 ms release, ceiling -0.5 dBFS.
+     * Keeps a redlined mix clean instead of hard-clipping into crackle. */
+    float vol = tp_cook.fx.volume, gain = limiter_gain, lowest = 1.0f;
+    const float ceiling = 0.94f;
     for (unsigned i = 0; i < FM1_BLOCK_FRAMES; ++i) {
-        output[2 * i] = (int32_t)(soft_clip(out_l[i] * vol) * 8388000.0f);
-        output[2 * i + 1] = (int32_t)(soft_clip(out_r[i] * vol) * 8388000.0f);
+        float l = out_l[i] * vol, r = out_r[i] * vol;
+        float a = l < 0 ? -l : l, b = r < 0 ? -r : r, peak = a > b ? a : b;
+        if (peak * gain > ceiling) gain = ceiling / peak;
+        else gain += (1.0f - gain) * 0.0002f;
+        if (gain < lowest) lowest = gain;
+        output[2 * i] = (int32_t)(tp_soft(l * gain) * 8388000.0f);
+        output[2 * i + 1] = (int32_t)(tp_soft(r * gain) * 8388000.0f);
     }
+    if (gain != gain || gain <= 0.0f) {
+        /* A NaN or Inf got in (should never happen): reset and go quiet. */
+        gain = 1.0f;
+        for (unsigned e = 0; e < TP_EMITTERS; ++e) filter_state[e][0].ic1 = filter_state[e][0].ic2 = filter_state[e][1].ic1 = filter_state[e][1].ic2 = 0.0f;
+        tp_fx_clear();
+        for (unsigned i = 0; i < 2U * FM1_BLOCK_FRAMES; ++i) output[i] = 0;
+    }
+    limiter_gain = gain;
+    stat_limiting = (uint8_t)(lowest < 0.5f ? 2 : lowest < 0.89f ? 1 : 0); /* >6 dB, >1 dB */
     return 0;
 }
 
@@ -698,11 +834,15 @@ TP_AUDIO int tempura_render(int32_t *output, unsigned frames)
 TP_AUDIO void tempura_cpu_report(uint32_t used_ticks, uint32_t block_ticks)
 {
     static unsigned calm;
-    if (!block_ticks) return;
-    uint32_t pct = (uint32_t)((uint64_t)used_ticks * 100U / block_ticks);
+    if (!block_ticks || safe_mode) { stat_cpu = 0; return; }
+    /* 32-bit only: no library division helpers in the audio interrupt. */
+    uint32_t per_pct = block_ticks / 100U;
+    uint32_t pct = per_pct ? used_ticks / per_pct : 0;
     stat_cpu = (uint8_t)(pct > 255U ? 255U : pct);
-    if (pct > 72U && grain_limit > 8U) { grain_limit -= 2U; calm = 0; }
-    else if (pct < 50U && grain_limit < TP_MAX_GRAINS && ++calm > 32U) { ++grain_limit; calm = 0; }
+    if (pct > 85U && grain_limit > 4U) { grain_limit = grain_limit * 3U / 4U; if (grain_limit < 4U) grain_limit = 4U; calm = 0; }
+    else if (pct > 70U && grain_limit > 4U) { grain_limit -= 2U; calm = 0; }
+    else if (pct < 55U && grain_limit < TP_MAX_GRAINS && ++calm > 64U) { ++grain_limit; calm = 0; }
+    else if (pct >= 55U) calm = 0;
 }
 
 /* ================================================================ live */
@@ -713,7 +853,7 @@ TP_AUDIO unsigned tempura_monitor_gain_q7(void)
 }
 TP_AUDIO void tempura_live_feed(const int16_t *bt, const int32_t *usb, unsigned frames)
 {
-    if (!live || tp_cook.fx.freeze) return;
+    if (tp_cook.fx.freeze) return;
     unsigned src = tp_cook.fx.live_src;
     if ((src == 1 && !usb) || (src == 0 && !bt)) return;
     float gain = tp_cook.fx.live_gain;
@@ -730,7 +870,7 @@ TP_AUDIO void tempura_live_feed(const int16_t *bt, const int32_t *usb, unsigned 
             live_write = (w + 1U) & live_mask;
             uint16_t a = (uint16_t)(s < 0 ? -(int32_t)s : s);
             if (a > live_px_peak) live_px_peak = a;
-            if (++live_px_count >= live_px_size) {
+            if (++live_px_count >= LIVE_PX) {
                 live_peaks[live_px] = (uint8_t)(live_px_peak >> 7);
                 live_px_peak = 0; live_px_count = 0;
                 if (++live_px >= 160U) live_px = 0;
@@ -738,7 +878,7 @@ TP_AUDIO void tempura_live_feed(const int16_t *bt, const int32_t *usb, unsigned 
         }
     }
 }
-unsigned tempura_live_head(void) { return live && live_len ? (unsigned)((uint64_t)live_write * 160U / live_len) : 0; }
+unsigned tempura_live_head(void) { return (unsigned)((uint64_t)live_write * 160U / live_len); }
 
 /* =========================================================== cooking */
 static float norm(int v) { return (float)v * (1.0f / 127.0f); }
@@ -874,8 +1014,9 @@ void tempura_stats(struct tp_stats *s)
     uint32_t dly = 0, rev = 0;
     tp_fx_heap(&dly, &rev);
     s->cpu = stat_cpu; s->grains = (uint8_t)grain_count; s->grain_limit = (uint8_t)grain_limit;
+    s->limiting = stat_limiting; s->overloads = stat_overloads; s->shed = stat_shed; s->starved = stat_starved;
     s->voices = stat_voices;
-    s->heap_cache = heap_cache; s->heap_live = live_bytes; s->heap_delay = dly; s->heap_reverb = rev;
+    s->heap_cache = (uint32_t)sizeof cache; s->heap_live = (uint32_t)sizeof live; s->heap_delay = dly; s->heap_reverb = rev;
     s->decodes = decode_count;
 }
 
@@ -913,7 +1054,7 @@ void tempura_peaks_poll(const struct tp_canvas *c)
             /* Live input: map the ring's running overview into the region. */
             for (unsigned p = 0; p < 160; ++p) {
                 unsigned q = (unsigned)(((float)j->start + (float)p * (float)(j->end - j->start) / 160.0f) * 160.0f / 127.0f);
-                peaks[t][p] = live ? live_peaks[q < 160 ? q : 159] : 0;
+                peaks[t][p] = live_peaks[q < 160 ? q : 159];
             }
             continue;
         }

@@ -43,8 +43,6 @@ void tp_fx_allocate(void);
 void tp_fx_heap(uint32_t *delay_bytes, uint32_t *reverb_bytes);
 TP_AUDIO void tp_fx_render(float *mod_l, float *mod_r, float *dly_l, float *dly_r,
                            float *rev_l, float *rev_r, float *out_l, float *out_r, unsigned frames);
-void tp_fx_clear(void);
+TP_AUDIO void tp_fx_clear(void);
 
-/* Allocation that always leaves a reserve for the Bluetooth/USB stacks. */
-void *tp_alloc_reserved(size_t bytes);
 #endif

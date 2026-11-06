@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception
  * Beetroot Tempura: modulation (chorus / flanger / vibrato), tempo delay and
- * reverb. Buffers are allocated after boot with a heap reserve, and an
- * effect whose buffer could not be allocated simply passes nothing. */
+ * reverb. All buffers are static (see tempura_engine.c for why). */
 #include "tempura_internal.h"
 #include <stdlib.h>
 #include <string.h>
@@ -12,19 +11,18 @@ static float mod_line[MOD_LEN];
 static unsigned mod_write;
 static float mod_phase, mod_fb_l, mod_fb_r;
 
-/* ---- delay: stereo at half rate (22.05 kHz), int16 storage ---- */
-static int16_t *dly;               /* interleaved L/R */
-static uint32_t dly_len, dly_mask, dly_bytes;
+/* ---- delay: stereo at half rate (22.05 kHz), int16 storage, 0.74 s ---- */
+enum { DLY_LEN = 16384, DLY_MASK = DLY_LEN - 1 };
+static int16_t dly[DLY_LEN * 2];   /* interleaved L/R */
 static uint32_t dly_write;
 static float dly_time, dly_lp_l, dly_lp_r, dly_prev_l, dly_prev_r;
 
 /* ---- reverb: Freeverb-style, 4 combs + 2 allpasses per side ---- */
-enum { COMBS = 4, ALLPASSES = 2 };
+enum { COMBS = 4, ALLPASSES = 2, SPREAD = 23 };
 static const uint16_t comb_len[COMBS] = {1116, 1277, 1422, 1557};
 static const uint16_t ap_len[ALLPASSES] = {556, 441};
-enum { SPREAD = 23 };
-static int16_t *rev_mem;
-static uint32_t rev_bytes;
+enum { REV_SAMPLES = 2 * (1116 + 1277 + 1422 + 1557 + 556 + 441) + (COMBS + ALLPASSES) * SPREAD };
+static int16_t rev_mem[REV_SAMPLES];
 static struct { int16_t *buf; uint16_t len, pos; float store; } comb[2][COMBS];
 static struct { int16_t *buf; uint16_t len, pos; } ap[2][ALLPASSES];
 
@@ -32,56 +30,28 @@ void tp_fx_init(void)
 {
     memset(mod_line, 0, sizeof mod_line);
     mod_write = 0; mod_phase = 0;
-}
-void tp_fx_allocate(void)
-{
-    if (!rev_mem) {
-        for (unsigned scale = 1; scale <= 2 && !rev_mem; ++scale) {
-            uint32_t total = 0;
-            for (unsigned s = 0; s < 2; ++s) {
-                for (unsigned i = 0; i < COMBS; ++i) total += (comb_len[i] + s * SPREAD) / scale;
-                for (unsigned i = 0; i < ALLPASSES; ++i) total += (ap_len[i] + s * SPREAD) / scale;
-            }
-            int16_t *mem = tp_alloc_reserved(total * sizeof(int16_t));
-            if (!mem) continue;
-            int16_t *p = mem;
-            tempura_lock();
-            for (unsigned s = 0; s < 2; ++s) {
-                for (unsigned i = 0; i < COMBS; ++i) {
-                    comb[s][i].buf = p; comb[s][i].len = (uint16_t)((comb_len[i] + s * SPREAD) / scale);
-                    comb[s][i].pos = 0; comb[s][i].store = 0; p += comb[s][i].len;
-                }
-                for (unsigned i = 0; i < ALLPASSES; ++i) {
-                    ap[s][i].buf = p; ap[s][i].len = (uint16_t)((ap_len[i] + s * SPREAD) / scale);
-                    ap[s][i].pos = 0; p += ap[s][i].len;
-                }
-            }
-            rev_mem = mem; rev_bytes = total * 2U;
-            tempura_unlock();
+    int16_t *p = rev_mem;
+    for (unsigned s = 0; s < 2; ++s) {
+        for (unsigned i = 0; i < COMBS; ++i) {
+            comb[s][i].buf = p; comb[s][i].len = (uint16_t)(comb_len[i] + s * SPREAD);
+            comb[s][i].pos = 0; comb[s][i].store = 0; p += comb[s][i].len;
         }
-    }
-    if (!dly) {
-        static const uint32_t try_len[] = {16384, 8192, 4096};
-        for (unsigned i = 0; i < 3 && !dly; ++i) {
-            int16_t *p = tp_alloc_reserved(try_len[i] * 2U * sizeof(int16_t));
-            if (!p) continue;
-            tempura_lock();
-            dly = p; dly_len = try_len[i]; dly_mask = dly_len - 1U; dly_bytes = dly_len * 4U;
-            dly_write = 0;
-            tempura_unlock();
+        for (unsigned i = 0; i < ALLPASSES; ++i) {
+            ap[s][i].buf = p; ap[s][i].len = (uint16_t)(ap_len[i] + s * SPREAD);
+            ap[s][i].pos = 0; p += ap[s][i].len;
         }
     }
 }
+void tp_fx_allocate(void) {}
 void tp_fx_heap(uint32_t *delay_bytes, uint32_t *reverb_bytes)
 {
-    *delay_bytes = dly_bytes;
-    *reverb_bytes = rev_bytes;
+    *delay_bytes = (uint32_t)sizeof dly;
+    *reverb_bytes = (uint32_t)sizeof rev_mem;
 }
-void tp_fx_clear(void)
+TP_AUDIO void tp_fx_clear(void)
 {
     for (unsigned i = 0; i < MOD_LEN; ++i) mod_line[i] = 0.0f;
-    if (dly) for (uint32_t i = 0; i < dly_len * 2U; ++i) dly[i] = 0;
-    if (rev_mem)
+    for (uint32_t i = 0; i < DLY_LEN * 2U; ++i) dly[i] = 0;
         for (unsigned s = 0; s < 2; ++s) {
             for (unsigned i = 0; i < COMBS; ++i) { for (unsigned k = 0; k < comb[s][i].len; ++k) comb[s][i].buf[k] = 0; comb[s][i].store = 0; }
             for (unsigned i = 0; i < ALLPASSES; ++i) for (unsigned k = 0; k < ap[s][i].len; ++k) ap[s][i].buf[k] = 0;
@@ -92,6 +62,9 @@ void tp_fx_clear(void)
 /* Reverb storage scale: float 1.0 == 8192 so tails have 4x headroom. */
 #define RS 8192.0f
 #define RI (1.0f / 8192.0f)
+/* Feedback paths saturate smoothly below the int16 storage limit (4.0),
+ * so a redlined send grows warm instead of hard-clipping into crackle. */
+TP_INLINE float fb_sat(float x) { return 3.5f * tp_soft(x * (1.0f / 3.5f)); }
 
 static TP_AUDIO void modulation(const float *in_l, const float *in_r, float *out_l, float *out_r, unsigned n)
 {
@@ -107,7 +80,7 @@ static TP_AUDIO void modulation(const float *in_l, const float *in_r, float *out
     float ret = f->mod_return;
     for (unsigned i = 0; i < n; ++i) {
         float x = (in_l[i] + in_r[i]) * 0.5f;
-        mod_line[mod_write & MOD_MASK] = x + (mod_fb_l + mod_fb_r) * 0.5f * fb;
+        mod_line[mod_write & MOD_MASK] = fb_sat(x + (mod_fb_l + mod_fb_r) * 0.5f * fb);
         mod_phase += inc;
         if (mod_phase >= 1.0f) mod_phase -= 1.0f;
         float dl = (base + depth * (0.5f + 0.5f * tp_sin1(mod_phase))) * 44100.0f;
@@ -122,13 +95,14 @@ static TP_AUDIO void modulation(const float *in_l, const float *in_r, float *out
         out_l[i] += yl * ret;
         out_r[i] += (f->mod_type == 2 ? yl : yr) * ret;
     }
+    mod_fb_l = tp_flush(mod_fb_l); mod_fb_r = tp_flush(mod_fb_r);
 }
 
 static TP_AUDIO void delay(const float *in_l, const float *in_r, float *out_l, float *out_r, unsigned n)
 {
     const struct tp_cooked_fx *f = &tp_cook.fx;
-    if (!dly || f->dly_return <= 0.0f) return;
-    float target = tp_clampf(f->dly_seconds * 22050.0f, 4.0f, (float)(dly_len - 4U));
+    if (f->dly_return <= 0.0f) return;
+    float target = tp_clampf(f->dly_seconds * 22050.0f, 4.0f, (float)(DLY_LEN - 4U));
     float fb = f->dly_feedback, ret = f->dly_return;
     float lp = 1.0f - tp_exp(-2.0f * TP_PI * f->dly_tone * (1.0f / 22050.0f));
     for (unsigned i = 0; i + 1 < n; i += 2) {
@@ -136,7 +110,7 @@ static TP_AUDIO void delay(const float *in_l, const float *in_r, float *out_l, f
         dly_time += (target - dly_time) * 0.0015f;
         int it = (int)dly_time;
         float fr = dly_time - (float)it;
-        uint32_t r0 = (dly_write - (uint32_t)it) & dly_mask, r1 = (r0 - 1U) & dly_mask;
+        uint32_t r0 = (dly_write - (uint32_t)it) & DLY_MASK, r1 = (r0 - 1U) & DLY_MASK;
         float yl = ((float)dly[2 * r0] + ((float)dly[2 * r1] - (float)dly[2 * r0]) * fr) * RI;
         float yr = ((float)dly[2 * r0 + 1] + ((float)dly[2 * r1 + 1] - (float)dly[2 * r0 + 1]) * fr) * RI;
         dly_lp_l += (yl - dly_lp_l) * lp;
@@ -145,19 +119,20 @@ static TP_AUDIO void delay(const float *in_l, const float *in_r, float *out_l, f
         float wl, wr;
         if (f->ping) { wl = (xl + xr) * 0.5f + dly_lp_r * fb; wr = dly_lp_l * fb; }
         else { wl = xl + dly_lp_l * fb; wr = xr + dly_lp_r * fb; }
-        dly[2 * dly_write] = tp_sat16(wl * RS);
-        dly[2 * dly_write + 1] = tp_sat16(wr * RS);
-        dly_write = (dly_write + 1U) & dly_mask;
+        dly[2 * dly_write] = tp_sat16(fb_sat(wl) * RS);
+        dly[2 * dly_write + 1] = tp_sat16(fb_sat(wr) * RS);
+        dly_write = (dly_write + 1U) & DLY_MASK;
         out_l[i] += (dly_prev_l + yl) * 0.5f * ret; out_l[i + 1] += yl * ret;
         out_r[i] += (dly_prev_r + yr) * 0.5f * ret; out_r[i + 1] += yr * ret;
         dly_prev_l = yl; dly_prev_r = yr;
     }
+    dly_lp_l = tp_flush(dly_lp_l); dly_lp_r = tp_flush(dly_lp_r);
 }
 
 static TP_AUDIO void reverb(const float *in_l, const float *in_r, float *out_l, float *out_r, unsigned n)
 {
     const struct tp_cooked_fx *f = &tp_cook.fx;
-    if (!rev_mem || f->rev_return <= 0.0f) return;
+    if (f->rev_return <= 0.0f) return;
     float feedback = f->rev_feedback, damp = f->rev_damp, keep = 1.0f - damp;
     float wet1 = f->rev_return * (0.5f + f->rev_width * 0.5f), wet2 = f->rev_return * (0.5f - f->rev_width * 0.5f);
     for (unsigned i = 0; i < n; ++i) {
@@ -170,7 +145,7 @@ static TP_AUDIO void reverb(const float *in_l, const float *in_r, float *out_l, 
                 uint16_t p = comb[s][c].pos;
                 float y = (float)b[p] * RI;
                 comb[s][c].store = y * keep + comb[s][c].store * damp;
-                b[p] = tp_sat16((input + comb[s][c].store * feedback) * RS);
+                b[p] = tp_sat16(fb_sat(input + comb[s][c].store * feedback) * RS);
                 if (++p >= comb[s][c].len) p = 0;
                 comb[s][c].pos = p;
                 acc += y;
@@ -179,7 +154,7 @@ static TP_AUDIO void reverb(const float *in_l, const float *in_r, float *out_l, 
                 int16_t *b = ap[s][a].buf;
                 uint16_t p = ap[s][a].pos;
                 float bo = (float)b[p] * RI;
-                b[p] = tp_sat16((acc + bo * 0.5f) * RS);
+                b[p] = tp_sat16(fb_sat(acc + bo * 0.5f) * RS);
                 acc = bo - acc;
                 if (++p >= ap[s][a].len) p = 0;
                 ap[s][a].pos = p;
@@ -189,6 +164,8 @@ static TP_AUDIO void reverb(const float *in_l, const float *in_r, float *out_l, 
         out_l[i] += side[0] * wet1 + side[1] * wet2;
         out_r[i] += side[1] * wet1 + side[0] * wet2;
     }
+    for (unsigned s = 0; s < 2; ++s)
+        for (unsigned c = 0; c < COMBS; ++c) comb[s][c].store = tp_flush(comb[s][c].store);
 }
 
 TP_AUDIO void tp_fx_render(float *mod_l, float *mod_r, float *dly_l, float *dly_r,

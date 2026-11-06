@@ -77,6 +77,22 @@ TP_INLINE float tp_svf_run(struct tp_svf *s, const struct tp_svf_coef *c, float 
     if (mode == 2) return v1;
     return v0 - c->k * v1 - v2;
 }
+/* Smooth saturation: unity for small signals, approaches +-1 (|x| <= 1.5). */
+TP_INLINE float tp_soft(float x)
+{
+    if (x > 1.5f) return 1.0f;
+    if (x < -1.5f) return -1.0f;
+    return x - x * x * x * (4.0f / 27.0f);
+}
+/* Denormal and runaway guard for filter and feedback state. */
+TP_INLINE float tp_flush(float x)
+{
+    if (x != x) return 0.0f;                      /* NaN */
+    if (x > -1e-18f && x < 1e-18f) return 0.0f;   /* denormal-range tail */
+    if (x > 64.0f) return 64.0f;
+    if (x < -64.0f) return -64.0f;
+    return x;
+}
 TP_INLINE int16_t tp_sat16(float x)
 {
     if (x > 32767.0f) return 32767;
