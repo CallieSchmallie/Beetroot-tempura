@@ -22,6 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 1.1 boot-loops on hardware and is withdrawn. The page ships 1.0
+      # (commit 1b3dfc5), the last build that started on a real FM-1.
+      - uses: actions/checkout@v4
+        with:
+          ref: 1b3dfc513b82461b9bf34d3aaab67b7f5927e8fd
+          path: recovery
+
       - name: Install JieLi toolchain 2.5.3
         shell: pwsh
         timeout-minutes: 25
@@ -101,30 +108,48 @@ jobs:
           Note "Toolchain found at $pi32"
           "FM1_PI32_TOOLCHAIN=$pi32" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Build firmware
+      - name: Build recovery firmware (1.0)
+        shell: pwsh
+        working-directory: recovery
+        run: ./sdk/Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN
+
+      - name: Build firmware (1.1, diagnostics only, not published)
+        continue-on-error: true
         shell: pwsh
         # Build.ps1 verifies every toolchain file against sdk/manifest.json
         # and checks SRAM, heap, BLE and USB linkage before packaging.
         run: ./sdk/Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN
 
       - name: Check memory and audio code placement
+        continue-on-error: true
         shell: pwsh
         run: |
           & "$env:FM1_PI32_TOOLCHAIN\bin\llvm-nm.exe" --print-size build/dx7/sdk.elf | Out-File -Encoding utf8 build/dx7/nm.txt
           python tools/ci/check_memory.py build/dx7/nm.txt
 
-      - name: Report largest code on failure
-        if: failure()
+      - name: Compare 1.0 and 1.1 memory and audio stack frames
+        continue-on-error: true
         shell: pwsh
-        run: python tools/ci/map_sizes.py build/dx7/sdk.map
+        run: |
+          $nm = "$env:FM1_PI32_TOOLCHAIN\bin\llvm-nm.exe"
+          $od = "$env:FM1_PI32_TOOLCHAIN\bin\llvm-objdump.exe"
+          foreach ($b in @(@{n='1.0';e='recovery/build/dx7/sdk.elf'}, @{n='1.1';e='build/dx7/sdk.elf'})) {
+            if (-not (Test-Path $b.e)) { Write-Host "::notice::$($b.n): no elf"; continue }
+            $syms = & $nm --print-size $b.e | Select-String '_MALLOC_SIZE|_HEAP_BEGIN|_HEAP_END|_stack|STACK|stack'
+            Write-Host "::notice::$($b.n) symbols: $(($syms | Out-String) -replace '\s+',' ')"
+            foreach ($f in @('fm1_audio_irq','tempura_render')) {
+              $d = & $od -d "--disassemble-symbols=$f" $b.e 2>&1 | Select-Object -First 14
+              Write-Host "::notice::$($b.n) $f prologue: $(($d | Out-String) -replace '\s+',' ')"
+            }
+          }
 
       - name: Make the flasher site
         shell: pwsh
         run: |
-          python tools/flasher/make_flasher.py --firmware build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc --identity build/dx7/build-identity.json --out site/index.html
-          Copy-Item simulator/beetroot-tempura.html site/simulator.html
-          Copy-Item build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc site/beetroot-tempura.fwsc
-          Copy-Item build/dx7/build-identity.json site/build-identity.json
+          python tools/flasher/make_flasher.py --firmware recovery/build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc --identity recovery/build/dx7/build-identity.json --out site/index.html
+          Copy-Item recovery/simulator/beetroot-tempura.html site/simulator.html
+          Copy-Item recovery/build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc site/beetroot-tempura.fwsc
+          Copy-Item recovery/build/dx7/build-identity.json site/build-identity.json
 
       - uses: actions/upload-pages-artifact@v3
         with:

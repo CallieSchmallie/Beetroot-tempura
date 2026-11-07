@@ -66,15 +66,15 @@ label.check input{margin-top:3px;accent-color:var(--beet)}
 <p class="note" id="support"></p>
 
 <section class="step notice" id="news">
-  <h2>Version 1.1: stability fix</h2>
-  <p>Version 1.0 could crackle and freeze when the CPU meter went red, and could fail to start on an FM-1 that reconnects to a phone over Bluetooth at power-on. 1.1 keeps the audio engine inside its time budget, leaves the FM-1's Bluetooth and USB memory untouched, and adds a limiter. Everyone on 1.0 should install 1.1.</p>
-  <details>
-    <summary>An FM-1 won't start or keeps restarting</summary>
+  <h2>Version 1.1 withdrawn</h2>
+  <p>Version 1.1 restarts over and over on real FM-1 units, so it has been removed. This page installs <b>version 1.0</b>, the last build that started normally on hardware. A fixed version will come back here once it has been tested on a device.</p>
+  <details open>
+    <summary>Your FM-1 keeps restarting after installing 1.1</summary>
     <ol>
-      <li>Turn off Bluetooth on every phone, tablet or computer the FM-1 has been paired with, so nothing reconnects to it at power-on.</li>
-      <li>Switch the FM-1 off, then on again while holding <b>HOME</b>. On 1.1 this opens a silent safe mode; on 1.0 it simply starts without the phone connection.</li>
-      <li>Connect it by USB and install 1.1 below, or M-VAVE's own firmware from their workbench at open.m-vave.com.</li>
-      <li>If the screen stays black and Connect finds nothing, tick "replace other firmware" in step 2 and try Connect again with the FM-1 plugged in. If it still isn't found, contact M-VAVE support: they have a recovery tool for the FM-1.</li>
+      <li>Switch the FM-1 off. Switch it on again while holding <b>HOME</b>, and keep holding for about 3 seconds. If it shows <b>SAFE MODE</b>, leave it there and connect it below.</li>
+      <li>If it keeps restarting anyway, just plug it in and press <b>Connect over USB</b> a few times while it restarts: the FM-1 can usually still be put into update mode in the moment it starts. Tick "replace other firmware" in step 2 if the page asks.</li>
+      <li>Install 1.0 below. Your loaded sounds should stay; if the tracks show a dash afterwards, load them again in step 5.</li>
+      <li>If Connect never finds it, use M-VAVE's workbench at open.m-vave.com ("Recovery &amp; force update"), or contact M-VAVE support: they have a recovery tool for the FM-1.</li>
     </ol>
   </details>
 </section>
