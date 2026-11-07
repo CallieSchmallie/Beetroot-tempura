@@ -113,32 +113,35 @@ jobs:
         working-directory: recovery
         run: ./sdk/Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN
 
-      - name: Build firmware (1.1, diagnostics only, not published)
-        continue-on-error: true
+      - name: Build firmware (1.2 test build)
         shell: pwsh
         # Build.ps1 verifies every toolchain file against sdk/manifest.json
         # and checks SRAM, heap, BLE and USB linkage before packaging.
         run: ./sdk/Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN
 
       - name: Check memory and audio code placement
-        continue-on-error: true
         shell: pwsh
         run: |
           & "$env:FM1_PI32_TOOLCHAIN\bin\llvm-nm.exe" --print-size build/dx7/sdk.elf | Out-File -Encoding utf8 build/dx7/nm.txt
           python tools/ci/check_memory.py build/dx7/nm.txt
 
-      - name: Compare 1.0 and 1.1 memory and audio stack frames
+      - name: Report largest code on failure
+        if: failure()
+        shell: pwsh
+        run: python tools/ci/map_sizes.py build/dx7/sdk.map
+
+      - name: Compare 1.0 and 1.2 memory and audio stack frames
         continue-on-error: true
         shell: pwsh
         run: |
           $nm = "$env:FM1_PI32_TOOLCHAIN\bin\llvm-nm.exe"
           $od = "$env:FM1_PI32_TOOLCHAIN\bin\llvm-objdump.exe"
-          foreach ($b in @(@{n='1.0';e='recovery/build/dx7/sdk.elf'}, @{n='1.1';e='build/dx7/sdk.elf'})) {
+          foreach ($b in @(@{n='1.0';e='recovery/build/dx7/sdk.elf'}, @{n='1.2';e='build/dx7/sdk.elf'})) {
             if (-not (Test-Path $b.e)) { Write-Host "::notice::$($b.n): no elf"; continue }
             $syms = & $nm --print-size $b.e | Select-String '_MALLOC_SIZE|_HEAP_BEGIN|_HEAP_END|_stack|STACK|stack'
             Write-Host "::notice::$($b.n) symbols: $(($syms | Out-String) -replace '\s+',' ')"
             foreach ($f in @('fm1_audio_irq','tempura_render')) {
-              $d = & $od -d "--disassemble-symbols=$f" $b.e 2>&1 | Select-Object -First 14
+              $d = & $od -d $b.e 2>&1 | Select-String -Pattern "<$f>:" -Context 0,12 | Select-Object -First 1
               Write-Host "::notice::$($b.n) $f prologue: $(($d | Out-String) -replace '\s+',' ')"
             }
           }
@@ -150,6 +153,8 @@ jobs:
           Copy-Item recovery/simulator/beetroot-tempura.html site/simulator.html
           Copy-Item recovery/build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc site/beetroot-tempura.fwsc
           Copy-Item recovery/build/dx7/build-identity.json site/build-identity.json
+          python tools/flasher/make_flasher.py --firmware build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc --identity build/dx7/build-identity.json --notice tools/flasher/notice_test.html --out site/test-1.2.html
+          Copy-Item build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc site/beetroot-tempura-1.2-test.fwsc
 
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1,7 +1,9 @@
 """Post-build memory and placement report for Beetroot Tempura.
 
 Reads `llvm-nm --print-size sdk.elf` output and fails the build if
-  * the runtime heap left for Bluetooth, USB and updates is under 48 KB, or
+  * the boot-time heap is under 176 KB. 1.0 booted with 192 KB; 1.1 had
+    89 KB and restarted endlessly on hardware before drawing anything. The
+    SDK's own 48 KB minimum is not enough for this app's Bluetooth set-up, or
   * any Beetroot Tempura audio function sits outside internal SRAM
     (audio code must keep running while Flash is busy).
 """
@@ -12,7 +14,7 @@ AUDIO = ['tempura_render', 'tempura_cpu_report', 'tempura_live_feed', 'tempura_m
          'cache_try', 'tp_sea5_decode', 'render_grain', 'spawn', 'spawn_grains', 'reader_start',
          'process_events', 'note_on', 'note_off', 'update_voices', 'finish_emitters',
          'modulation', 'delay', 'reverb', 'grain_slot', 'nth_cell', 'lfo_shape', 'voice_release']
-BUFFERS = ['cache', 'live', 'dly', 'rev_mem', 'mod_line', 'window_table', 'grains', 'voices']
+BUFFERS = ['cache_small', 'cache', 'live', 'dly', 'rev_mem', 'mod_line', 'window_table', 'grains', 'voices']
 sym = {}
 for line in open(sys.argv[1], encoding='utf-8', errors='replace'):
     m = re.match(r'^([0-9a-fA-F]+)\s+(?:([0-9a-fA-F]+)\s+)?([A-Za-z])\s+(\S+)', line)
@@ -24,7 +26,8 @@ if not heap: problems.append('heap size symbol not found')
 else:
     kb = heap[0] / 1024
     print(f'::notice::Runtime heap for Bluetooth, USB and updates: {heap[0]} bytes ({kb:.1f} KB; SDK minimum 48 KB)')
-    if heap[0] < 49152: problems.append(f'runtime heap only {heap[0]} bytes')
+    if heap[0] < 176 * 1024:
+        problems.append(f'boot-time heap only {heap[0]} bytes ({kb:.1f} KB); 1.1 boot-looped at 89 KB, 1.0 booted at 192 KB. Need at least 176 KB.')
 found = []
 for name in AUDIO:
     if name in sym:

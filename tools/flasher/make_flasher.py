@@ -11,6 +11,7 @@ import argparse, base64, json, pathlib
 root = pathlib.Path(__file__).resolve().parents[2]
 ap = argparse.ArgumentParser()
 ap.add_argument('--firmware'); ap.add_argument('--identity')
+ap.add_argument('--notice', help='HTML that replaces the news notice (for test pages)')
 ap.add_argument('--out', default=str(root / 'tools/flasher/beetroot-tempura-flasher.html'))
 a = ap.parse_args()
 page = (root / 'tools/flasher/flasher.html.in').read_text(encoding='utf-8')
@@ -22,6 +23,10 @@ samples = samples[:samples.index('\n', cut) + 1] + '})();\n'
 library = (root / 'tools/flasher/sound_library.json').read_text(encoding='utf-8')
 dqt = (root / 'tools/flasher/sea_dqt.json').read_text(encoding='utf-8')
 sea5 = (root / 'tools/flasher/sea5.js').read_text(encoding='utf-8')
+if a.notice:
+    start = page.index('<section class="step notice" id="news">')
+    end = page.index('</section>', start) + len('</section>')
+    page = page[:start] + pathlib.Path(a.notice).read_text(encoding='utf-8').strip() + page[end:]
 embedded = 'null'
 if a.firmware:
     fw = pathlib.Path(a.firmware).read_bytes()

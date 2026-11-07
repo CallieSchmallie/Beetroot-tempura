@@ -15,7 +15,7 @@
 #include "fm1.h"
 
 #define TEMPURA_NAME    "BEETROOT TEMPURA"
-#define TEMPURA_VERSION "1.1"
+#define TEMPURA_VERSION "1.2"
 
 enum {
     TP_TRACKS = 8, TP_ROWS = 8, TP_EMITTERS = 4, TP_VOICES = 16,

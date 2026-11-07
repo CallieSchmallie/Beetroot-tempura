@@ -117,14 +117,18 @@ voice library are not touched.
 
 ## Memory and CPU
 
-All of Beetroot Tempura's large buffers are static, so the SDK's link-time
-check guarantees the FM-1 keeps at least 48 KB of working memory for
-Bluetooth, USB and updates. They total about 115 KB: grain cache 21 KB, live
-tape 32 KB (0.74 s), delay 32 KB (0.74 s, stored at 11 kHz), reverb 26 KB,
-modulation 4 KB. Version 1.0 took about 175 KB from the runtime heap
-instead, which left Bluetooth roughly 16 KB. The GitHub
-build also runs `tools/ci/check_memory.py`, which reports that figure and
-fails if any of Beetroot Tempura's audio code lies outside internal SRAM.
+The FM-1 must start with plenty of free memory: its Bluetooth and USB set-up
+runs before Beetroot Tempura and needs it. 1.0 started with 192 KB free. The
+GitHub build runs `tools/ci/check_memory.py`, which fails the build if that
+figure drops below 176 KB, or if any of Beetroot Tempura's audio code lies
+outside internal SRAM.
+
+After the splash screen, Beetroot Tempura borrows its large buffers from that
+memory: grain cache 21 KB, live tape 32 KB (0.74 s), delay 32 KB (0.74 s,
+stored at 11 kHz) and reverb 13 KB. Every request leaves 64 KB free for
+Bluetooth and USB (1.0 left 24 KB). If a buffer can't be had, a smaller one is
+tried; without one, that effect or the live input stays silent, and a small
+built-in grain cache still gives sound. GLO → SYSTEM shows what was obtained.
 
 The audio engine has a hard time budget. It stops starting new grains once
 35% of the 2.9 ms block is used and sheds grains past 58%. It decodes at
@@ -135,11 +139,21 @@ and the delay, reverb and modulation feedback saturate smoothly. The CPU
 meter's outline turns amber while the limiter works and red when it works
 hard. GLO → SYSTEM shows CPU, the grain limit and an overload count.
 
-## Changes in 1.1
+## Changes in 1.2 (test build)
+
+- Fixes 1.1 restarting about once a second before showing anything. 1.1 made
+  its buffers static, which left the FM-1 only 89 KB to start with; 1.2 starts
+  with about the same memory as 1.0 and borrows the buffers after start-up.
+- The sample decoder's scratch buffer is no longer on the audio interrupt's
+  stack.
+- Keeps 1.1's crackle and freeze fixes.
+- Published at `/test-1.2.html` until it has started on a real FM-1. The main
+  page installs 1.0.
+
+## Changes in 1.1 (withdrawn: restarts endlessly on hardware)
 
 - Fixed crackling and freezing at high CPU load (the red CPU meter).
-- Fixed a crash at power-on on units that reconnect to a phone over Bluetooth
-  (buffers no longer come from the memory the Bluetooth stack needs).
+- Made all buffers static. This stopped the FM-1 starting at all (see 1.2).
 - Faster sample decoding (bit-exact) and a faster grain loop.
 - Output limiter; smoother feedback saturation; denormal and NaN guards.
 - Safe mode: hold HOME at power-on.

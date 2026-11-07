@@ -23,20 +23,20 @@ static struct tp_slot slots[TP_SLOTS];
 
 /* ---------------------------------------------------------------- cache */
 struct tp_chunk { const uint8_t *tag; int32_t index; uint32_t used; int16_t pcm[CHUNK]; };
-/* All large buffers are static so the SDK's link-time check (at least 48 KB
- * of runtime heap for Bluetooth, USB and updates) accounts for them. Earlier
- * builds took them from the heap at run time, which could starve the
- * Bluetooth stack on units that reconnect to a phone at power-on. */
-enum { CACHE_SETS = 16 };
-static struct tp_chunk cache[CACHE_SETS * 2];
+/* Large buffers are borrowed from the heap only after the FM-1 has started,
+ * always leaving TP_HEAP_RESERVE free for Bluetooth and USB. 1.1 made them
+ * static, which shrank the memory the FM-1 boots with from 192 KB to 89 KB
+ * and stopped it starting. A small static cache always gives sound. */
+enum { CACHE_SETS_MIN = 4, CACHE_SETS_MAX = 16 };
+static struct tp_chunk cache_small[CACHE_SETS_MIN * 2];
+static struct tp_chunk *cache = cache_small;
+static unsigned cache_sets = CACHE_SETS_MIN;
 static uint32_t cache_clock, decode_count;
 static int16_t silent_chunk[CHUNK];
 
 /* ----------------------------------------------------------------- live */
-enum { LIVE_LEN = 16384, LIVE_MASK = LIVE_LEN - 1, LIVE_PX = LIVE_LEN / 160 };  /* 0.74 s at 22.05 kHz */
-static int16_t live[LIVE_LEN];
-#define live_len ((uint32_t)LIVE_LEN)
-#define live_mask ((uint32_t)LIVE_MASK)
+static int16_t *live;                      /* 22.05 kHz tape, allocated after boot */
+static uint32_t live_len, live_mask, live_px_len = 1;
 static volatile uint32_t live_write;
 static int32_t live_pair;
 static unsigned live_odd, live_px_count, live_px;
@@ -150,9 +150,43 @@ void tempura_engine_init(void)
     tp_fx_init();
 }
 
+enum { TP_HEAP_RESERVE = 64 * 1024 };
+void *tp_alloc_reserved(size_t bytes)
+{
+    void *reserve = malloc(TP_HEAP_RESERVE);
+    if (!reserve) return NULL;
+    void *p = calloc(1, bytes);
+    free(reserve);
+    return p;
+}
 void tempura_engine_allocate(void)
 {
-    /* Buffers are static now; kept so callers need not change. */
+    /* Called once the FM-1 has started (after the splash), never at boot. */
+    if (cache == cache_small) {
+        static const unsigned sets_try[] = {CACHE_SETS_MAX, 8};
+        for (unsigned i = 0; i < 2; ++i) {
+            struct tp_chunk *c = tp_alloc_reserved(sizeof(struct tp_chunk) * 2U * sets_try[i]);
+            if (!c) continue;
+            tempura_lock();
+            cache = c; cache_sets = sets_try[i];
+            tempura_unlock();
+            break;
+        }
+    }
+    tp_fx_allocate();
+    if (!live) {
+        static const uint32_t len_try[] = {16384, 8192};
+        for (unsigned i = 0; i < 2; ++i) {
+            int16_t *p = tp_alloc_reserved(len_try[i] * sizeof(int16_t));
+            if (!p) continue;
+            tempura_lock();
+            live_write = 0; live_px_count = 0; live_px = 0;
+            live_len = len_try[i]; live_mask = live_len - 1U; live_px_len = live_len / 160U;
+            live = p;
+            tempura_unlock();
+            break;
+        }
+    }
 }
 void tempura_block_clock(uint32_t (*used_ticks)(void), uint32_t block_ticks)
 {
@@ -172,7 +206,7 @@ void tempura_bind_slot(unsigned slot, const uint8_t *data, unsigned bytes, unsig
     slots[slot].frames = data ? frames : 0;
     slots[slot].chunks = data ? (frames + CHUNK - 1U) / CHUNK : 0;
     /* Any cached chunk of a replaced sample must not be reused. */
-    for (unsigned i = 0; i < CACHE_SETS * 2U; ++i) cache[i].tag = NULL;
+    for (unsigned i = 0; i < cache_sets * 2U; ++i) cache[i].tag = NULL;
     for (unsigned g = 0; g < TP_MAX_GRAINS; ++g) grains[g].active = 0;
     grain_count = 0;
     tempura_unlock();
@@ -200,7 +234,7 @@ static TP_AUDIO const int16_t *cache_try(unsigned slot, int32_t index)
     if (!s->data || index < 0 || (uint32_t)index >= s->chunks) return silent_chunk;
     uint32_t h = ((uint32_t)(uintptr_t)s->data >> 4) * 2654435761U ^ (uint32_t)index * 40503U;
     h ^= h >> 15;
-    struct tp_chunk *way = &cache[(h % CACHE_SETS) * 2U];
+    struct tp_chunk *way = &cache[(h % cache_sets) * 2U];
     ++cache_clock;
     if (way[0].tag == s->data && way[0].index == index) { way[0].used = cache_clock; return way[0].pcm; }
     if (way[1].tag == s->data && way[1].index == index) { way[1].used = cache_clock; return way[1].pcm; }
@@ -223,7 +257,9 @@ static TP_AUDIO const int16_t *cache_try(unsigned slot, int32_t index)
 static TP_AUDIO int tp_sea5_decode(const uint8_t *c, int16_t *pcm)
 {
     if (c[0] != 1 || c[1] != 0x45 || c[2] != 20 || c[3] != 0x5a) return -1;
-    uint8_t codes[CHUNK];
+    /* Static, not on the stack: this runs in the audio interrupt, whose
+     * stack is small. Only the audio interrupt calls it. */
+    static uint8_t codes[CHUNK];
     const uint8_t *b = c + 28;
     for (unsigned k = 0; k < CHUNK; k += 8, b += 5) {
         unsigned b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3], b4 = b[4];
@@ -418,6 +454,7 @@ static TP_AUDIO int reader_start(struct tp_reader *r, unsigned col, float y01, f
         if (!r->pcm) { r->kind = 0; return -1; }
         rate = (float)TP_SAMPLE_RATE * (1.0f / 44100.0f);
     } else {
+        if (!live) { r->kind = 0; return -1; }
         r->kind = 2;
         r->off = (int32_t)(pos01 * (float)(live_len - 1U));
         rate = (float)TP_LIVE_RATE * (1.0f / 44100.0f);
@@ -853,6 +890,7 @@ TP_AUDIO unsigned tempura_monitor_gain_q7(void)
 }
 TP_AUDIO void tempura_live_feed(const int16_t *bt, const int32_t *usb, unsigned frames)
 {
+    if (!live) return;
     if (tp_cook.fx.freeze) return;
     unsigned src = tp_cook.fx.live_src;
     if ((src == 1 && !usb) || (src == 0 && !bt)) return;
@@ -870,7 +908,7 @@ TP_AUDIO void tempura_live_feed(const int16_t *bt, const int32_t *usb, unsigned 
             live_write = (w + 1U) & live_mask;
             uint16_t a = (uint16_t)(s < 0 ? -(int32_t)s : s);
             if (a > live_px_peak) live_px_peak = a;
-            if (++live_px_count >= LIVE_PX) {
+            if (++live_px_count >= live_px_len) {
                 live_peaks[live_px] = (uint8_t)(live_px_peak >> 7);
                 live_px_peak = 0; live_px_count = 0;
                 if (++live_px >= 160U) live_px = 0;
@@ -878,7 +916,7 @@ TP_AUDIO void tempura_live_feed(const int16_t *bt, const int32_t *usb, unsigned 
         }
     }
 }
-unsigned tempura_live_head(void) { return (unsigned)((uint64_t)live_write * 160U / live_len); }
+unsigned tempura_live_head(void) { if (!live_len) return 0; return (unsigned)((uint64_t)live_write * 160U / live_len); }
 
 /* =========================================================== cooking */
 static float norm(int v) { return (float)v * (1.0f / 127.0f); }
@@ -1016,7 +1054,7 @@ void tempura_stats(struct tp_stats *s)
     s->cpu = stat_cpu; s->grains = (uint8_t)grain_count; s->grain_limit = (uint8_t)grain_limit;
     s->limiting = stat_limiting; s->overloads = stat_overloads; s->shed = stat_shed; s->starved = stat_starved;
     s->voices = stat_voices;
-    s->heap_cache = (uint32_t)sizeof cache; s->heap_live = (uint32_t)sizeof live; s->heap_delay = dly; s->heap_reverb = rev;
+    s->heap_cache = (uint32_t)(sizeof(struct tp_chunk) * 2U * cache_sets); s->heap_live = live_len * 2U; s->heap_delay = dly; s->heap_reverb = rev;
     s->decodes = decode_count;
 }
 
