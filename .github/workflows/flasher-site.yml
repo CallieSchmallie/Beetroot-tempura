@@ -22,8 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1.1 boot-loops on hardware and is withdrawn. The page ships 1.0
-      # (commit 1b3dfc5), the last build that started on a real FM-1.
+      # 1.0 (commit 1b3dfc5) stays available at /1.0.html. 1.1 was withdrawn.
       - uses: actions/checkout@v4
         with:
           ref: 1b3dfc513b82461b9bf34d3aaab67b7f5927e8fd
@@ -113,7 +112,7 @@ jobs:
         working-directory: recovery
         run: ./sdk/Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN
 
-      - name: Build firmware (1.2 test build)
+      - name: Build firmware (current)
         shell: pwsh
         # Build.ps1 verifies every toolchain file against sdk/manifest.json
         # and checks SRAM, heap, BLE and USB linkage before packaging.
@@ -149,12 +148,14 @@ jobs:
       - name: Make the flasher site
         shell: pwsh
         run: |
-          python tools/flasher/make_flasher.py --firmware recovery/build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc --identity recovery/build/dx7/build-identity.json --out site/index.html
-          Copy-Item recovery/simulator/beetroot-tempura.html site/simulator.html
-          Copy-Item recovery/build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc site/beetroot-tempura.fwsc
-          Copy-Item recovery/build/dx7/build-identity.json site/build-identity.json
-          python tools/flasher/make_flasher.py --firmware build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc --identity build/dx7/build-identity.json --notice tools/flasher/notice_test.html --out site/test-1.2.html
-          Copy-Item build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc site/beetroot-tempura-1.2-test.fwsc
+          python tools/flasher/make_flasher.py --firmware build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc --identity build/dx7/build-identity.json --out site/index.html
+          python tools/flasher/make_flasher.py --firmware recovery/build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc --identity recovery/build/dx7/build-identity.json --notice tools/flasher/notice_1.0.html --out site/1.0.html
+          # Old link to the 1.2 test page now goes to the main page.
+          '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=./"><a href="./">Beetroot Tempura flasher</a>' | Out-File -Encoding utf8 site/test-1.2.html
+          Copy-Item simulator/beetroot-tempura.html site/simulator.html
+          Copy-Item build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc site/beetroot-tempura.fwsc
+          Copy-Item build/dx7/build-identity.json site/build-identity.json
+          Copy-Item recovery/build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc site/beetroot-tempura-1.0.fwsc
 
       - uses: actions/upload-pages-artifact@v3
         with:

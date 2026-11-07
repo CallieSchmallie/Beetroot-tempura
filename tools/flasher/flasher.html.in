@@ -66,15 +66,15 @@ label.check input{margin-top:3px;accent-color:var(--beet)}
 <p class="note" id="support"></p>
 
 <section class="step notice" id="news">
-  <h2>Version 1.1 withdrawn</h2>
-  <p>Version 1.1 restarts over and over on real FM-1 units, so it has been removed. This page installs <b>version 1.0</b>, the last build that started normally on hardware. A fixed version will come back here once it has been tested on a device.</p>
-  <details open>
-    <summary>Your FM-1 keeps restarting after installing 1.1</summary>
+  <h2>Version 1.2</h2>
+  <p>1.2 fixes 1.0's crackling and freezing when the CPU meter goes red, and keeps more memory free for Bluetooth and USB. <b>Version 1.1 was withdrawn</b>: it restarts about once a second without showing anything. If you installed 1.1, don't use it.</p>
+  <details>
+    <summary>Your FM-1 restarts every second (after 1.1)</summary>
     <ol>
-      <li>Switch the FM-1 off. Switch it on again while holding <b>HOME</b>, and keep holding for about 3 seconds. If it shows <b>SAFE MODE</b>, leave it there and connect it below.</li>
-      <li>If it keeps restarting anyway, just plug it in and press <b>Connect over USB</b> a few times while it restarts: the FM-1 can usually still be put into update mode in the moment it starts. Tick "replace other firmware" in step 2 if the page asks.</li>
-      <li>Install 1.0 below. Your loaded sounds should stay; if the tracks show a dash afterwards, load them again in step 5.</li>
-      <li>If Connect never finds it, use M-VAVE's workbench at open.m-vave.com ("Recovery &amp; force update"), or contact M-VAVE support: they have a recovery tool for the FM-1.</li>
+      <li>The browser can't see a unit in that state. Switch it off, hold <b>OCT−</b> and <b>OCT+</b>, switch it on and keep holding for 10 seconds, then press <b>Connect over USB</b> below.</li>
+      <li>If that fails, leave it switched on for two minutes and press Connect again.</li>
+      <li>If Connect still finds nothing, the chip's recovery mode needs a computer. The community tools <a href="https://github.com/Quixotic7/MvaveFM1Unbricker">MvaveFM1Unbricker</a> (Windows, Linux) and <a href="https://github.com/HuskiePJN/fm1-mac-recovery">fm1-mac-recovery</a> (Mac) restore M-VAVE's V15 firmware; they are not from M-VAVE or from this project. M-VAVE support can also recover it. Then install 1.2 here.</li>
+      <li>Version 1.0 is still available on <a href="1.0.html">its own page</a>.</li>
     </ol>
   </details>
 </section>

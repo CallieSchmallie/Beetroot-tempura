@@ -125,7 +125,7 @@ outside internal SRAM.
 
 After the splash screen, Beetroot Tempura borrows its large buffers from that
 memory: grain cache 21 KB, live tape 32 KB (0.74 s), delay 32 KB (0.74 s,
-stored at 11 kHz) and reverb 13 KB. Every request leaves 64 KB free for
+stored at 11 kHz) and reverb 25 KB. Every request leaves 64 KB free for
 Bluetooth and USB (1.0 left 24 KB). If a buffer can't be had, a smaller one is
 tried; without one, that effect or the live input stays silent, and a small
 built-in grain cache still gives sound. GLO → SYSTEM shows what was obtained.
@@ -139,7 +139,7 @@ and the delay, reverb and modulation feedback saturate smoothly. The CPU
 meter's outline turns amber while the limiter works and red when it works
 hard. GLO → SYSTEM shows CPU, the grain limit and an overload count.
 
-## Changes in 1.2 (test build)
+## Changes in 1.2
 
 - Fixes 1.1 restarting about once a second before showing anything. 1.1 made
   its buffers static, which left the FM-1 only 89 KB to start with; 1.2 starts
@@ -147,8 +147,10 @@ hard. GLO → SYSTEM shows CPU, the grain limit and an overload count.
 - The sample decoder's scratch buffer is no longer on the audio interrupt's
   stack.
 - Keeps 1.1's crackle and freeze fixes.
-- Published at `/test-1.2.html` until it has started on a real FM-1. The main
-  page installs 1.0.
+- Tested on an FM-1: starts, plays, effects work, clean when redlined. GLO →
+  SYSTEM showed delay 32 KB, reverb 25 KB and live 16 KB (the smaller live
+  tape, 0.37 s, because the full one would have cut into the Bluetooth
+  reserve). The main page installs 1.2; 1.0 is at `/1.0.html`.
 
 ## Changes in 1.1 (withdrawn: restarts endlessly on hardware)
 
