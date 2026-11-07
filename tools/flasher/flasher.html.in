@@ -257,7 +257,8 @@ async function doConnect() {
   try {
     access = access || await navigator.requestMIDIAccess({ sysex: true });
     if (updater) await updater.disconnect().catch(() => {});
-    updater = new W.Updater(access, pkg, (phase, pct) => { say('m4', en(phase) + (pct < 100 ? ' · ' + pct + '%' : ''), pct >= 100 ? 'ok' : ''); $('bar').style.width = pct + '%'; });
+    // Give the FM-1 two minutes to come back after each restart (default 40 s).
+    updater = new W.Updater(access, pkg, (phase, pct) => { say('m4', en(phase) + (pct < 100 ? ' · ' + pct + '%' : ''), pct >= 100 ? 'ok' : ''); $('bar').style.width = pct + '%'; }, { reconnect: 120000 });
     connected = await updater.connect({ force: $('force').checked });
     if (connected.migration) {
       $('forcebox').hidden = false;
@@ -375,8 +376,19 @@ $('flash').addEventListener('click', async () => {
     $('bar').style.width = '100%';
     say('m4', 'Done. Beetroot Tempura is installed and verified. The FM-1 restarts into the canvas.', 'ok');
   } catch (err) {
-    say('m4', en(err.message) + ' Leave the FM-1 connected, then press Connect and Install again.', 'bad');
+    say('m4', en(err.message) + ' Checking what the FM-1 is doing now…', 'bad');
     connected = null; $('connect').disabled = false;
+    // Look once more and tell the person which recovery path applies.
+    let seen = null;
+    try { await updater.disconnect(); const d = await updater.discover(true); if (d) { seen = d.identity; await d.link.close(); } } catch (e) {}
+    const ports = (updater.diagnostics && updater.diagnostics.inputs || []).join(', ') || 'none';
+    if (seen && /^ota-/i.test(seen)) {
+      say('m4', 'The FM-1 is in update mode and waiting (it shows as ' + seen + '). Leave it plugged in, press Connect over USB, then Install: the update continues from here.', 'warn');
+    } else if (seen) {
+      say('m4', 'The FM-1 restarted into its old firmware (' + seen + ') instead of update mode. If that is Beetroot Tempura 1.0, it is short on memory: turn off Bluetooth on any phone or computer paired with it, make sure this computer is not playing sound through the FM-1, then on the FM-1 open GLO → BLUETOOTH and turn K2 (BT AUDIO) left to OFF. Then press Connect and Install again straight away, without restarting it.', 'bad');
+    } else {
+      say('m4', 'The FM-1 is not visible over USB right now (MIDI ports seen: ' + ports + '). Leave it plugged in for a minute, then press Connect. If its screen stays dark and nothing appears, unplug it, plug it back in and press Connect with "replace other firmware" ticked.', 'bad');
+    }
   } finally { window.onbeforeunload = null; $('files').disabled = false; }
 });
 })();
