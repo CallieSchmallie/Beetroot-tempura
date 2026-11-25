@@ -68,6 +68,7 @@ label.check input{margin-top:3px;accent-color:var(--beet)}
 <section class="step notice" id="news">
   <h2>Version 1.2</h2>
   <p>1.2 fixes 1.0's crackling and freezing when the CPU meter goes red, and keeps more memory free for Bluetooth and USB. <b>Version 1.1 was withdrawn</b>: it restarts about once a second without showing anything. If you installed 1.1, don't use it.</p>
+  <p><b>Try 1.3 (test build):</b> every section gets its own screen, and there's a new arpeggiator. It hasn't been tried on an FM-1 yet: <a href="test-1.3.html">install the 1.3 test build</a>.</p>
   <details>
     <summary>Your FM-1 restarts every second (after 1.1)</summary>
     <ol>

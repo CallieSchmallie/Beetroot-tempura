@@ -28,7 +28,7 @@ independent implementation and shares no code or assets with Tempera.
 | REC | Place or remove the selected emitter on the cursor cell (hold REC and move to paint) |
 | SEQ | Next emitter. Hold SEQ + first four white keys: pick E1–E4 |
 | PLAY | Drone the selected emitter on/off |
-| ARP (hold) | Play the cursor cell |
+| ARP | Arpeggiator page (press again: page 2). Hold 0.5 s: arpeggiator on/off |
 | Keys | PLAY mode: play the emitter's cells at that pitch. CELLS mode: 16 white keys = 2 rows of cells under the cursor |
 | OCT− / OCT+ | Octave. Both together: switch PLAY ↔ CELLS |
 | HOME, EDIT, ENV, LFO, FX, SCL, GLO, SAVE | Canvas, grain pages, envelope, filter/LFO, effects, track, settings (keyboard, MIDI, live input, Bluetooth, system), canvases |
@@ -39,6 +39,45 @@ independent implementation and shares no code or assets with Tempera.
 If the encoders on your unit are in a different order than SELECT=E0,
 PAGE=E1, K1–K4=E2–E5, MAIN=E6, swap them at the top of `handle_encoders()` in
 `app/tempura/tempura_ui.c`.
+
+## Section screens
+
+HOME shows the canvas. Every other section replaces it with a picture of
+what its knobs change, drawn from the engine's own values:
+
+| Page | Screen |
+|---|---|
+| EDIT · GRAIN | One grain's window shape, and the summed grain cloud over time with each grain's start (red = reversed). Shows the overlap. |
+| EDIT · POSITION | The 8 tracks as lanes with their waveforms, the emitter's cells, live grains, and spray along (amber) and across (teal) tracks. |
+| EDIT · PITCH | A ±2 octave ladder with the emitter's pitch, its spray range or octave jumps. |
+| EDIT · MIX | Level, the stereo position with pan spray, and the velocity curve. |
+| EDIT · PLAY MODE | How keys turn into voices in POLY, MONO (with the glide) and LATCH. |
+| ENV | The ADSR curve with times, and a dot that follows the sound. |
+| LFO · FILTER | The filter's frequency response, and where the envelope sweeps it. |
+| LFO · LFO | Two cycles of the wave at its depth, its destination, and a moving playhead. |
+| FX · SENDS | The four send levels. |
+| FX · MODULATION | The chorus/flanger/vibrato delay sweep for left and right. |
+| FX · DELAY | The echo train (left above, right below in ping-pong). |
+| FX · DELAY+MOD | Tempo with a beat light, ping-pong, and both returns. |
+| FX · REVERB | The reverb tail with its decay time. |
+| SCL | The track's waveform with start and end, live grains, tune, level and pan. |
+| GLO · KEYBOARD / MIDI / LIVE INPUT | The keyboard as played, the MIDI routing, the live-input tape loop. |
+| ARP | The step pattern, with gate, swing, accents and the step now playing. |
+
+## Arpeggiator
+
+Press **ARP** for the arpeggiator. Hold **ARP** for half a second to switch
+it on or off from any section (its light blinks while it's on).
+
+| Page | K1 | K2 | K3 | K4 |
+|---|---|---|---|---|
+| ARP | On/off | Pattern: UP, DOWN, UP+DOWN, RANDOM, AS PLAYED, CHORD | Rate: 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32 | Octaves 1–4 |
+| ARP FEEL | Gate 5–100 % | Latch | Swing 50–75 % | Velocity: as key, fixed, accent on the beat |
+
+It plays the notes held on the keys and MIDI notes (not cell triggers) through
+each emitter's normal voices, so play mode, envelope and effects all apply. It
+runs in the audio engine, so its timing doesn't depend on the screen. It
+follows the TEMPO setting, or MIDI clock when one is coming in.
 
 ## MIDI implementation
 
@@ -138,6 +177,16 @@ adapts to measured load. A limiter keeps a redlined mix below full scale,
 and the delay, reverb and modulation feedback saturate smoothly. The CPU
 meter's outline turns amber while the limiter works and red when it works
 hard. GLO → SYSTEM shows CPU, the grain limit and an overload count.
+
+## Changes in 1.3 (test build)
+
+- Each section shows its own screen (see Section screens).
+- Arpeggiator. The old "hold ARP to play the cursor cell" is gone; CELLS
+  keyboard mode plays cells.
+- Canvases saved by older versions still load: their CRC covers their own
+  length, and settings added since then take their defaults.
+- Published at `/test-1.3.html` until it has run on a real FM-1. The main page
+  still installs 1.2.
 
 ## Changes in 1.2
 

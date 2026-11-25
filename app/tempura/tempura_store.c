@@ -31,7 +31,17 @@ int tempura_store_load(unsigned slot, struct tp_canvas *c)
     int r = read_head(slot, &h);
     if (r) return r;
     if (fm1_flash_read(slot * FM1_FLASH_SECTOR_BYTES + sizeof h, c, sizeof *c)) return -1;
-    if (tempura_crc32(0, c, sizeof *c) != h.crc || c->magic != TP_CANVAS_MAGIC) return 1;
+    /* A canvas saved by an older version is shorter: its CRC covers only its
+     * own length, and the settings added since then take their defaults. */
+    unsigned bytes = c->bytes;
+    if (c->magic != TP_CANVAS_MAGIC || bytes < offsetof(struct tp_canvas, g) || bytes > sizeof *c ||
+        tempura_crc32(0, c, bytes) != h.crc) return 1;
+    if (bytes < sizeof *c) {
+        static struct tp_canvas fresh;
+        tempura_canvas_default(&fresh);
+        memcpy(&fresh, c, bytes);
+        *c = fresh;
+    }
     tempura_canvas_sanitize(c);
     return 0;
 }

@@ -15,7 +15,7 @@
 #include "fm1.h"
 
 #define TEMPURA_NAME    "BEETROOT TEMPURA"
-#define TEMPURA_VERSION "1.2"
+#define TEMPURA_VERSION "1.3"
 
 enum {
     TP_TRACKS = 8, TP_ROWS = 8, TP_EMITTERS = 4, TP_VOICES = 16,
@@ -51,6 +51,9 @@ enum {
     G_KEY_MODE, G_KEY_LAYER, G_ROOT, G_VOLUME,
     G_MIDI_MODE, G_CELL_CH, G_KEY_OUT, G_AT_DEST,
     G_LIVE_SRC, G_LIVE_GAIN, G_LIVE_MONITOR, G_LIVE_FREEZE,
+    /* Added in 1.3. Canvases saved earlier load with these at defaults. */
+    G_ARP_ON, G_ARP_MODE, G_ARP_RATE, G_ARP_OCT,
+    G_ARP_GATE, G_ARP_LATCH, G_ARP_SWING, G_ARP_VELO,
     G_COUNT
 };
 
@@ -58,6 +61,8 @@ enum { LFO_TO_POS, LFO_TO_SIZE, LFO_TO_RATE, LFO_TO_PITCH,
        LFO_TO_CUTOFF, LFO_TO_PAN, LFO_TO_LEVEL, LFO_TO_SPRAY, LFO_DESTS };
 enum { MODE_POLY, MODE_MONO, MODE_LATCH };
 enum { KEYS_PLAY, KEYS_CELLS };
+enum { ARP_UP, ARP_DOWN, ARP_UPDOWN, ARP_RANDOM, ARP_ORDER, ARP_CHORD, ARP_MODES };
+enum { ARP_VELO_KEY, ARP_VELO_FIXED, ARP_VELO_ACCENT };
 
 struct tp_param_info {
     char name[10];
@@ -132,6 +137,14 @@ unsigned tempura_grain_snapshot(struct tp_grain_view *out, unsigned max);
 uint8_t tempura_track_peak(unsigned track, unsigned pixel); /* 0..255 per 1/160 of the track */
 unsigned tempura_live_head(void);                             /* 0..159 */
 unsigned tempura_voice_mask(void);                            /* active voices per emitter, 4 bits each */
+/* Arpeggiator view for one emitter: the notes it steps through (in play
+ * order, first octave), and the index of the step now sounding (255 = none). */
+struct tp_arp_view { uint8_t notes[32], count, playing, held; };
+void tempura_arp_view(unsigned emitter, struct tp_arp_view *v);
+/* Live views for the section screens (control task). */
+const float *tempura_window(unsigned shape);                   /* 257 points, 0..1 */
+void tempura_lfo_view(unsigned emitter, float *phase, float *value);
+unsigned tempura_env_view(unsigned emitter, float *level);     /* 0 idle, 1 attack, 2 decay/sustain, 3 release */
 struct tp_stats { uint8_t cpu, grains, grain_limit, voices, limiting, overloads; uint32_t heap_cache, heap_live, heap_delay, heap_reverb, decodes, shed, starved; };
 void tempura_stats(struct tp_stats *s);
 void tempura_peaks_poll(const struct tp_canvas *c); /* control task: incremental waveform overview */

@@ -402,12 +402,175 @@ static TP_AUDIO void note_off(const struct tp_event *e)
         return;
     }
 }
+/* ========================================================= arpeggiator
+ * Runs in the audio interrupt, so steps land on the audio clock (2.9 ms
+ * blocks) whatever the screen is doing. Keys and MIDI notes (not cell
+ * triggers, drones or audition) go to the arpeggiator while it is on; it
+ * plays them through note_on/note_off with its own tag. */
+enum { ARP_TAG = 4, ARP_HELD = 16, ARP_SEQ = 128 };
+struct tp_arp {
+    uint8_t note[ARP_HELD], vel[ARP_HELD], down[ARP_HELD];
+    uint8_t count, phys, sounding[ARP_HELD], nsounding;
+    uint16_t pos;            /* next step in the sequence */
+    uint16_t step;           /* steps since start, for swing and accents */
+    uint8_t running, playing_pos;
+    float next_s, off_s;
+};
+static struct tp_arp arps[TP_EMITTERS];
+static uint8_t arp_was_on;
+static uint32_t arp_rng = 0x2545f491U;
+
+TP_INLINE void arp_sort(uint8_t *a, unsigned n)
+{
+    for (unsigned i = 1; i < n; ++i) { uint8_t x = a[i]; unsigned j = i; while (j && a[j - 1] > x) { a[j] = a[j - 1]; --j; } a[j] = x; }
+}
+TP_AUDIO unsigned tp_arp_sequence(const uint8_t *held, unsigned n, unsigned mode, unsigned octaves, uint8_t *out, unsigned max)
+{
+    if (!n) return 0;
+    if (n > ARP_HELD) n = ARP_HELD;
+    if (octaves < 1) octaves = 1;
+    uint8_t base[ARP_HELD];
+    for (unsigned i = 0; i < n; ++i) base[i] = held[i];
+    if (mode != ARP_ORDER) arp_sort(base, n);
+    unsigned len = 0;
+    if (mode == ARP_CHORD) {           /* one step per octave; the lowest note stands for the chord */
+        for (unsigned o = 0; o < octaves && len < max; ++o)
+            if (base[0] + 12U * o <= 127U) out[len++] = (uint8_t)(base[0] + 12U * o);
+        return len;
+    }
+    for (unsigned o = 0; o < octaves; ++o)
+        for (unsigned i = 0; i < n && len < max; ++i)
+            if (base[i] + 12U * o <= 127U) out[len++] = (uint8_t)(base[i] + 12U * o);
+    if (mode == ARP_DOWN) {
+        for (unsigned i = 0; i < len / 2U; ++i) { uint8_t t = out[i]; out[i] = out[len - 1U - i]; out[len - 1U - i] = t; }
+    } else if (mode == ARP_UPDOWN && len > 2) {
+        unsigned up = len;
+        for (unsigned i = up - 2U; i >= 1U && len < max; --i) out[len++] = out[i];
+    }
+    return len;
+}
+
+static TP_AUDIO void arp_release(struct tp_arp *a, unsigned emitter)
+{
+    for (unsigned i = 0; i < a->nsounding; ++i) {
+        struct tp_event off = {EV_OFF, (uint8_t)emitter, a->sounding[i], 0, 255, ARP_TAG, 0};
+        note_off(&off);
+    }
+    a->nsounding = 0;
+}
+static TP_AUDIO void arp_clear(void)
+{
+    for (unsigned e = 0; e < TP_EMITTERS; ++e) { arp_release(&arps[e], e); arps[e].count = arps[e].phys = 0; arps[e].running = 0; }
+}
+static TP_AUDIO void arp_key(const struct tp_event *e)
+{
+    struct tp_arp *a = &arps[e->emitter];
+    const struct tp_cooked_fx *f = &tp_cook.fx;
+    if (e->type == EV_ON) {
+        /* Latch: the first key after all keys were let go starts a new chord. */
+        if (f->arp_latch && !a->phys) a->count = 0;
+        ++a->phys;
+        for (unsigned i = 0; i < a->count; ++i)
+            if (a->note[i] == e->note) { a->down[i] = 1; a->vel[i] = e->value; return; }
+        if (a->count >= ARP_HELD) return;
+        a->note[a->count] = e->note; a->vel[a->count] = e->value; a->down[a->count] = 1; ++a->count;
+        if (!a->running) { a->running = 1; a->pos = 0; a->step = 0; a->next_s = 0.0f; }
+        return;
+    }
+    if (a->phys) --a->phys;
+    for (unsigned i = 0; i < a->count; ++i) {
+        if (a->note[i] != e->note) continue;
+        a->down[i] = 0;
+        if (!f->arp_latch) {
+            for (unsigned k = i + 1U; k < a->count; ++k) { a->note[k - 1] = a->note[k]; a->vel[k - 1] = a->vel[k]; a->down[k - 1] = a->down[k]; }
+            --a->count;
+        }
+        break;
+    }
+}
+static TP_AUDIO void arp_block(float block_s, float bpm_now)
+{
+    const struct tp_cooked_fx *f = &tp_cook.fx;
+    if (!f->arp_on) {
+        if (arp_was_on) { arp_clear(); arp_was_on = 0; }
+        return;
+    }
+    arp_was_on = 1;
+    float step_s = 60.0f / (tp_maxf(bpm_now, 20.0f) * (float)(f->arp_steps_per_beat ? f->arp_steps_per_beat : 4U));
+    static uint8_t seq[ARP_SEQ];
+    for (unsigned e = 0; e < TP_EMITTERS; ++e) {
+        struct tp_arp *a = &arps[e];
+        if (!f->arp_latch && a->count) {   /* latch switched off: drop keys no longer held */
+            unsigned w = 0;
+            for (unsigned i = 0; i < a->count; ++i) if (a->down[i]) { a->note[w] = a->note[i]; a->vel[w] = a->vel[i]; a->down[w] = 1; ++w; }
+            a->count = (uint8_t)w;
+        }
+        if (a->nsounding) { a->off_s -= block_s; if (a->off_s <= 0.0f) arp_release(a, e); }
+        if (!a->count) { if (a->running) { arp_release(a, e); a->running = 0; } a->playing_pos = 255; continue; }
+        a->next_s -= block_s;
+        if (a->next_s > 0.0f) continue;
+        /* Fire one step. Swing lengthens even steps and shortens odd ones. */
+        float swing = f->arp_swing * ((a->step & 1U) ? -1.0f : 1.0f);
+        float len = step_s * (1.0f + swing);
+        a->next_s += len;
+        if (a->next_s < -step_s) a->next_s = 0.0f;   /* tempo jumped: don't race to catch up */
+        arp_release(a, e);
+        unsigned n = tp_arp_sequence(a->note, a->count, f->arp_mode, f->arp_oct, seq, ARP_SEQ);
+        if (!n) continue;
+        unsigned idx;
+        if (f->arp_mode == ARP_RANDOM) {
+            arp_rng ^= arp_rng << 13; arp_rng ^= arp_rng >> 17; arp_rng ^= arp_rng << 5;
+            idx = arp_rng % n;
+        } else idx = a->pos % n;
+        a->pos = (uint16_t)((idx + 1U) % n);
+        a->playing_pos = (uint8_t)(idx < 255U ? idx : 254U);
+        unsigned accent = (a->step % (f->arp_steps_per_beat ? f->arp_steps_per_beat : 4U)) == 0;
+        ++a->step;
+        unsigned count = 1;
+        uint8_t notes[ARP_HELD];
+        notes[0] = seq[idx];
+        if (f->arp_mode == ARP_CHORD) {     /* every held note, shifted to this step's octave */
+            unsigned shift = (unsigned)(seq[idx] - seq[0]);
+            count = 0;
+            for (unsigned i = 0; i < a->count; ++i) if (a->note[i] + shift <= 127U) notes[count++] = (uint8_t)(a->note[i] + shift);
+        }
+        for (unsigned i = 0; i < count; ++i) {
+            unsigned vel = 100;
+            if (f->arp_velo == ARP_VELO_ACCENT) vel = accent ? 124U : 76U;
+            else if (f->arp_velo == ARP_VELO_KEY) {
+                vel = a->vel[0];
+                for (unsigned k = 0; k < a->count; ++k) if ((unsigned)(notes[i] + 120U - a->note[k]) % 12U == 0) { vel = a->vel[k]; break; }
+            }
+            struct tp_event on = {EV_ON, (uint8_t)e, notes[i], (uint8_t)vel, 255, ARP_TAG, 0};
+            note_on(&on);
+            a->sounding[a->nsounding++] = notes[i];
+        }
+        a->off_s = len * f->arp_gate;
+    }
+}
+void tempura_arp_view(unsigned emitter, struct tp_arp_view *v)
+{
+    memset(v, 0, sizeof *v);
+    if (emitter >= TP_EMITTERS) return;
+    const struct tp_arp *a = &arps[emitter];
+    uint8_t held[ARP_HELD];
+    unsigned n = a->count < ARP_HELD ? a->count : ARP_HELD;
+    for (unsigned i = 0; i < n; ++i) held[i] = a->note[i];
+    v->held = (uint8_t)n;
+    v->count = (uint8_t)tp_arp_sequence(held, n, tp_cook.fx.arp_mode, tp_cook.fx.arp_oct, v->notes, sizeof v->notes);
+    v->playing = a->nsounding ? a->playing_pos : 255;
+}
+
 static TP_AUDIO void process_events(void)
 {
     while (ev_read != ev_write) {
         TP_BARRIER();
         const struct tp_event *e = &events[ev_read];
-        if (e->type == EV_ON) note_on(e);
+        if ((e->type == EV_ON || e->type == EV_OFF) && tp_cook.fx.arp_on && e->cell == 255 && e->tag <= 1) {
+            arp_key(e);
+            /* A key held since before ARP was switched on still gets its release. */
+            if (e->type == EV_OFF) note_off(e);
+        } else if (e->type == EV_ON) note_on(e);
         else if (e->type == EV_OFF) note_off(e);
         else if (e->type == EV_ALL_OFF || e->type == EV_PANIC) {
             for (unsigned i = 0; i < TP_VOICES; ++i) {
@@ -420,6 +583,7 @@ static TP_AUDIO void process_events(void)
                 tp_fx_clear();
             }
             for (unsigned k = 0; k < TP_EMITTERS; ++k) held_keys[k] = sustain_on[k] = 0;
+            for (unsigned k = 0; k < TP_EMITTERS; ++k) { arps[k].count = arps[k].phys = arps[k].nsounding = 0; arps[k].running = 0; }
         } else if (e->type == EV_BEND && e->emitter < TP_EMITTERS) bend[e->emitter] = (float)e->data * (1.0f / 256.0f);
         else if (e->type == EV_PRESS && e->emitter < TP_EMITTERS) pressure[e->emitter] = (float)e->value * (1.0f / 127.0f);
         else if (e->type == EV_SUST && e->emitter < TP_EMITTERS) {
@@ -804,6 +968,7 @@ TP_AUDIO int tempura_render(int32_t *output, unsigned frames)
     decodes_block = 0; starved_block = 0;
     process_events();
     const float block_s = (float)FM1_BLOCK_FRAMES / 44100.0f;
+    arp_block(block_s, bpm);
     for (unsigned e = 0; e < TP_EMITTERS; ++e) {
         lfo_phase[e] += tp_cook.e[e].lfo_rate * block_s;
         int wrapped = lfo_phase[e] >= 1.0f;
@@ -1008,6 +1173,15 @@ void tempura_engine_cook(const struct tp_canvas *c)
     f->monitor = norm(g[G_LIVE_MONITOR]);
     f->freeze = (uint8_t)g[G_LIVE_FREEZE];
     f->at_dest = (uint8_t)g[G_AT_DEST];
+    static const uint8_t arp_steps[6] = {1, 2, 3, 4, 6, 8};
+    f->arp_on = (uint8_t)g[G_ARP_ON];
+    f->arp_mode = (uint8_t)g[G_ARP_MODE];
+    f->arp_steps_per_beat = arp_steps[(unsigned)g[G_ARP_RATE] < 6U ? (unsigned)g[G_ARP_RATE] : 3U];
+    f->arp_oct = (uint8_t)g[G_ARP_OCT];
+    f->arp_gate = 0.05f + norm(g[G_ARP_GATE]) * 0.95f;
+    f->arp_latch = (uint8_t)g[G_ARP_LATCH];
+    f->arp_swing = norm(g[G_ARP_SWING]) * 0.5f;   /* 50 % .. 75 % */
+    f->arp_velo = (uint8_t)g[G_ARP_VELO];
     /* Word-sized copies: a block may see a mix of old and new values, never a torn float. */
     volatile tp_word *dst = (volatile tp_word *)(void *)&tp_cook;
     const tp_word *src = (const tp_word *)(const void *)&k;
@@ -1039,6 +1213,23 @@ unsigned tempura_grain_snapshot(struct tp_grain_view *out, unsigned max)
         ++n;
     }
     return n;
+}
+const float *tempura_window(unsigned shape) { return window_table[shape < 6U ? shape : 0U]; }
+void tempura_lfo_view(unsigned e, float *phase, float *value)
+{
+    if (e >= TP_EMITTERS) e = 0;
+    *phase = lfo_phase[e]; *value = lfo_value[e];
+}
+unsigned tempura_env_view(unsigned e, float *level)
+{
+    unsigned stage = 0; float best = 0.0f;
+    for (unsigned i = 0; i < TP_VOICES; ++i) {
+        const struct tp_voice *v = &voices[i];
+        if (!v->active || v->emitter != e || v->env < best) continue;
+        best = v->env; stage = v->stage + 1U;
+    }
+    *level = best;
+    return stage;
 }
 unsigned tempura_voice_mask(void)
 {

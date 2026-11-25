@@ -30,6 +30,8 @@ struct tp_cooked_fx {
     float rev_feedback, rev_damp, rev_width, rev_return;
     float volume, live_gain, monitor;
     uint8_t at_dest;
+    uint8_t arp_on, arp_mode, arp_oct, arp_latch, arp_velo, arp_steps_per_beat;
+    float arp_gate, arp_swing;
 };
 struct tp_cooked {
     struct tp_cooked_emitter e[TP_EMITTERS];
@@ -45,6 +47,10 @@ void tp_fx_heap(uint32_t *delay_bytes, uint32_t *reverb_bytes);
 TP_AUDIO void tp_fx_render(float *mod_l, float *mod_r, float *dly_l, float *dly_r,
                            float *rev_l, float *rev_r, float *out_l, float *out_r, unsigned frames);
 TP_AUDIO void tp_fx_clear(void);
+
+/* Arpeggiator step sequence, shared by the engine and the screen. Returns
+ * the number of steps written to out (at most max). */
+unsigned tp_arp_sequence(const uint8_t *held, unsigned n, unsigned mode, unsigned octaves, uint8_t *out, unsigned max);
 
 /* Allocation that always leaves a reserve for the Bluetooth/USB stacks. */
 void *tp_alloc_reserved(size_t bytes);

@@ -6,15 +6,18 @@
  *   REC   place / remove emitter on cursor cell (hold + move to paint)
  *   SEQ   next emitter (hold SEQ + first 4 white keys: pick E1-E4)
  *   PLAY  drone on/off for the selected emitter (REC+PLAY: freeze live)
- *   ARP   hold to play the cursor cell
+ *   ARP   arpeggiator page (press again: next page; hold 0.5 s: on/off)
  *   OCT- / OCT+  octave; both together: PLAY <-> CELLS keyboard
  *   HOME canvas  EDIT grain  ENV envelope  LFO filter/LFO  FX effects
  *   SCL  track   GLO settings/Bluetooth/system   SAVE canvases
+ *   Each section draws its own picture of what its knobs change
+ *   (tempura_views.inc); HOME shows the canvas.
  *   HOME+PLAY    panic
  */
 /* Control-task code: optimise for size (the FM-1 app area is about 444 KB). */
 #pragma clang attribute push (__attribute__((minsize)), apply_to = function)
 #include "tempura.h"
+#include "tempura_internal.h"
 #include "tempura_gfx.h"
 #include "instrument.h"
 #include <string.h>
@@ -43,49 +46,57 @@ enum { GX = 4, CW = 29, GY = 18, CH = 20, PANEL_Y = 180 };
 
 /* ---- pages ---- */
 enum { K_EMITTER, K_TRACK, K_GLOBAL, K_BLE, K_SYSTEM, K_CANVAS };
-struct page { const char *title; uint8_t kind; int8_t p[4]; };
-enum { S_HOME, S_EDIT, S_ENV, S_LFO, S_FX, S_TRACK, S_SET, S_CANVAS, SECTIONS };
+struct page { const char *title; uint8_t kind, view; int8_t p[4]; };
+enum { S_HOME, S_EDIT, S_ENV, S_LFO, S_FX, S_TRACK, S_SET, S_CANVAS, S_ARP, SECTIONS };
+enum {
+    V_GRID, V_GRAIN, V_POSITION, V_PITCH, V_MIX, V_MODE, V_ENV, V_FILTER, V_LFO,
+    V_SENDS, V_MODFX, V_DELAY, V_DLYMOD, V_REVERB, V_TRACK, V_KEYS, V_MIDI, V_LIVE, V_ARP
+};
 static const struct page home_pages[] = {
-    {"PLAY", K_EMITTER, {EP_RATE, EP_SIZE, EP_SPRAY_Y, EP_SEMI}},
+    {"PLAY", K_EMITTER, V_GRID, {EP_RATE, EP_SIZE, EP_SPRAY_Y, EP_SEMI}},
 };
 static const struct page edit_pages[] = {
-    {"GRAIN", K_EMITTER, {EP_RATE, EP_SIZE, EP_SHAPE, EP_REVERSE}},
-    {"POSITION", K_EMITTER, {EP_POS, EP_SPRAY_Y, EP_SPRAY_X, EP_SCAN}},
-    {"PITCH", K_EMITTER, {EP_OCTAVE, EP_SEMI, EP_FINE, EP_PITCH_SPRAY}},
-    {"MIX", K_EMITTER, {EP_LEVEL, EP_PAN, EP_PAN_SPRAY, EP_VELO}},
-    {"PLAY MODE", K_EMITTER, {EP_MODE, EP_QUANT, EP_ALIGN_X, EP_GLIDE}},
+    {"GRAIN", K_EMITTER, V_GRAIN, {EP_RATE, EP_SIZE, EP_SHAPE, EP_REVERSE}},
+    {"POSITION", K_EMITTER, V_POSITION, {EP_POS, EP_SPRAY_Y, EP_SPRAY_X, EP_SCAN}},
+    {"PITCH", K_EMITTER, V_PITCH, {EP_OCTAVE, EP_SEMI, EP_FINE, EP_PITCH_SPRAY}},
+    {"MIX", K_EMITTER, V_MIX, {EP_LEVEL, EP_PAN, EP_PAN_SPRAY, EP_VELO}},
+    {"PLAY MODE", K_EMITTER, V_MODE, {EP_MODE, EP_QUANT, EP_ALIGN_X, EP_GLIDE}},
 };
 static const struct page env_pages[] = {
-    {"ENVELOPE", K_EMITTER, {EP_ATTACK, EP_DECAY, EP_SUSTAIN, EP_RELEASE}},
+    {"ENVELOPE", K_EMITTER, V_ENV, {EP_ATTACK, EP_DECAY, EP_SUSTAIN, EP_RELEASE}},
 };
 static const struct page lfo_pages[] = {
-    {"FILTER", K_EMITTER, {EP_FILTER, EP_CUTOFF, EP_RES, EP_ENV_FILTER}},
-    {"LFO", K_EMITTER, {EP_LFO_SHAPE, EP_LFO_RATE, EP_LFO_DEPTH, EP_LFO_DEST}},
+    {"FILTER", K_EMITTER, V_FILTER, {EP_FILTER, EP_CUTOFF, EP_RES, EP_ENV_FILTER}},
+    {"LFO", K_EMITTER, V_LFO, {EP_LFO_SHAPE, EP_LFO_RATE, EP_LFO_DEPTH, EP_LFO_DEST}},
 };
 static const struct page fx_pages[] = {
-    {"SENDS", K_EMITTER, {EP_SEND_MOD, EP_SEND_DELAY, EP_SEND_REVERB, EP_DRY}},
-    {"MODULATION", K_GLOBAL, {G_MOD_TYPE, G_MOD_RATE, G_MOD_DEPTH, G_MOD_FEEDBACK}},
-    {"DELAY", K_GLOBAL, {G_DLY_TIME, G_DLY_FEEDBACK, G_DLY_TONE, G_DLY_SYNC}},
-    {"DELAY+MOD", K_GLOBAL, {G_DLY_PING, G_BPM, G_DLY_RETURN, G_MOD_RETURN}},
-    {"REVERB", K_GLOBAL, {G_REV_SIZE, G_REV_DAMP, G_REV_WIDTH, G_REV_RETURN}},
+    {"SENDS", K_EMITTER, V_SENDS, {EP_SEND_MOD, EP_SEND_DELAY, EP_SEND_REVERB, EP_DRY}},
+    {"MODULATION", K_GLOBAL, V_MODFX, {G_MOD_TYPE, G_MOD_RATE, G_MOD_DEPTH, G_MOD_FEEDBACK}},
+    {"DELAY", K_GLOBAL, V_DELAY, {G_DLY_TIME, G_DLY_FEEDBACK, G_DLY_TONE, G_DLY_SYNC}},
+    {"DELAY+MOD", K_GLOBAL, V_DLYMOD, {G_DLY_PING, G_BPM, G_DLY_RETURN, G_MOD_RETURN}},
+    {"REVERB", K_GLOBAL, V_REVERB, {G_REV_SIZE, G_REV_DAMP, G_REV_WIDTH, G_REV_RETURN}},
 };
 static const struct page track_pages[] = {
-    {"TRACK", K_TRACK, {TR_SOURCE, TR_LEVEL, TR_TUNE, TR_FINE}},
-    {"TRACK", K_TRACK, {TR_PAN, TR_REVERSE, TR_START, TR_END}},
+    {"TRACK", K_TRACK, V_TRACK, {TR_SOURCE, TR_LEVEL, TR_TUNE, TR_FINE}},
+    {"TRACK", K_TRACK, V_TRACK, {TR_PAN, TR_REVERSE, TR_START, TR_END}},
 };
 static const struct page set_pages[] = {
-    {"KEYBOARD", K_GLOBAL, {G_KEY_MODE, G_KEY_LAYER, G_ROOT, G_VOLUME}},
-    {"MIDI", K_GLOBAL, {G_MIDI_MODE, G_CELL_CH, G_KEY_OUT, G_AT_DEST}},
-    {"LIVE INPUT", K_GLOBAL, {G_LIVE_SRC, G_LIVE_GAIN, G_LIVE_MONITOR, G_LIVE_FREEZE}},
-    {"BLUETOOTH", K_BLE, {-1, -1, -1, -1}},
-    {"SYSTEM", K_SYSTEM, {-1, -1, -1, -1}},
+    {"KEYBOARD", K_GLOBAL, V_KEYS, {G_KEY_MODE, G_KEY_LAYER, G_ROOT, G_VOLUME}},
+    {"MIDI", K_GLOBAL, V_MIDI, {G_MIDI_MODE, G_CELL_CH, G_KEY_OUT, G_AT_DEST}},
+    {"LIVE INPUT", K_GLOBAL, V_LIVE, {G_LIVE_SRC, G_LIVE_GAIN, G_LIVE_MONITOR, G_LIVE_FREEZE}},
+    {"BLUETOOTH", K_BLE, V_GRID, {-1, -1, -1, -1}},
+    {"SYSTEM", K_SYSTEM, V_GRID, {-1, -1, -1, -1}},
 };
 static const struct page canvas_pages[] = {
-    {"CANVASES", K_CANVAS, {-1, -1, -1, -1}},
+    {"CANVASES", K_CANVAS, V_GRID, {-1, -1, -1, -1}},
+};
+static const struct page arp_pages[] = {
+    {"ARP", K_GLOBAL, V_ARP, {G_ARP_ON, G_ARP_MODE, G_ARP_RATE, G_ARP_OCT}},
+    {"ARP FEEL", K_GLOBAL, V_ARP, {G_ARP_GATE, G_ARP_LATCH, G_ARP_SWING, G_ARP_VELO}},
 };
 static const struct { const struct page *pages; uint8_t count; } sections[SECTIONS] = {
     {home_pages, 1}, {edit_pages, 5}, {env_pages, 1}, {lfo_pages, 2},
-    {fx_pages, 5}, {track_pages, 2}, {set_pages, 5}, {canvas_pages, 1},
+    {fx_pages, 5}, {track_pages, 2}, {set_pages, 5}, {canvas_pages, 1}, {arp_pages, 2},
 };
 
 /* ---- state ---- */
@@ -95,7 +106,7 @@ static unsigned section, page_of[SECTIONS];
 static int octave;
 static uint32_t prev_keys, prev_buttons, boot_ms, frame_ms;
 static uint8_t key_note[27], key_mask[27], key_cell[27];
-static uint8_t drone[TP_EMITTERS], arp_cell = 255, arp_mask;
+static uint8_t drone[TP_EMITTERS];
 static uint32_t press_ms[14];
 static int8_t enc_dir[7];
 static uint32_t enc_ms[7];
@@ -355,6 +366,14 @@ static void handle_buttons(const struct fm1_controls *c, uint32_t pressed, uint3
     if (pressed & BTN(B_FX)) open_section(S_FX);
     if (pressed & BTN(B_SCL)) open_section(S_TRACK);
     if (pressed & BTN(B_GLO)) open_section(S_SET);
+    /* ARP: a tap opens (then pages through) the arpeggiator; holding it for
+     * half a second switches the arpeggiator on or off from any section. */
+    if ((released & BTN(B_ARP)) && now - press_ms[B_ARP] >= 500U) {
+        release_all_keys();
+        canvas.g[G_ARP_ON] = !canvas.g[G_ARP_ON];
+        changed();
+        say(canvas.g[G_ARP_ON] ? "ARPEGGIATOR ON" : "ARPEGGIATOR OFF");
+    } else if (released & BTN(B_ARP)) open_section(S_ARP);
     if ((pressed & BTN(B_SAVE)) && section != S_CANVAS) { open_section(S_CANVAS); return; }
 
     const struct page *pg = current_page();
@@ -377,14 +396,6 @@ static void handle_buttons(const struct fm1_controls *c, uint32_t pressed, uint3
         drone[sel] = !drone[sel];
         if (drone[sel]) (void)tempura_note_on(sel, 60, 100, 255, 2);
         else (void)tempura_note_off(sel, 60, 255, 2);
-    }
-    if (pressed & BTN(B_ARP)) {
-        arp_cell = (uint8_t)(cur_x * 8U + cur_y); arp_mask = (uint8_t)sel;
-        (void)tempura_note_on(sel, 60, 100, arp_cell, 3);
-    }
-    if ((released & BTN(B_ARP)) && arp_cell < 64) {
-        (void)tempura_note_off(arp_mask, 60, arp_cell, 3);
-        arp_cell = 255;
     }
 }
 
@@ -424,11 +435,11 @@ static void update_leds(void)
     const struct page *pg = current_page();
     static uint32_t shown = 0xffffffffU, shown_keys = 0xffffffffU;
     uint32_t b = 0;
-    static const uint8_t section_button[SECTIONS] = {B_HOME, B_EDIT, B_ENV, B_LFO, B_FX, B_SCL, B_GLO, B_SAVE};
+    static const uint8_t section_button[SECTIONS] = {B_HOME, B_EDIT, B_ENV, B_LFO, B_FX, B_SCL, B_GLO, B_SAVE, B_ARP};
     b |= BTN(section_button[section]);
     if (drone[sel]) b |= BTN(B_PLAY);
     if ((canvas.cells[sel][cur_x] >> cur_y) & 1U) b |= BTN(B_REC);
-    if (arp_cell < 64) b |= BTN(B_ARP);
+    if (canvas.g[G_ARP_ON] && ((fm1_millis() >> 8) & 1U || section == S_ARP)) b |= BTN(B_ARP);  /* blinks while on */
     if (octave < 0) b |= BTN(B_OCT_DOWN);
     if (octave > 0) b |= BTN(B_OCT_UP);
     if (pg->kind == K_EMITTER) b |= BTN(B_SEQ);
@@ -695,13 +706,18 @@ static void draw_canvas_page(void)
     gfx_text(4, 226, "K1 CURSOR  K2 LETTER", 1, C_DIM);
 }
 
+#include "tempura_views.inc"
+
 static void draw(void)
 {
     const struct page *pg = current_page();
+    static unsigned frame_view;
+    if (gfx_top == 0) { frame_view = pg->view; view_prepare(frame_view); }
     draw_header();
     if (pg->kind == K_BLE) { if (gfx_top >= GY - 2) draw_ble(); }
     else if (pg->kind == K_SYSTEM) { if (gfx_top >= GY - 2) draw_system(); }
     else if (pg->kind == K_CANVAS) { if (gfx_top >= GY - 2) draw_canvas_page(); }
+    else if (frame_view != V_GRID) draw_view(frame_view);
     else draw_grid();
     if (gfx_top + GFX_BAND > PANEL_Y - 2) {
         if (gfx_top < PANEL_Y) gfx_fill(0, PANEL_Y - 2, GFX_W, 2, C_BG);

@@ -82,6 +82,14 @@ static const struct tp_param_info global_info[G_COUNT] = {
     [G_LIVE_GAIN]    = {"IN GAIN",  0, 127,  90, PK_NUM},
     [G_LIVE_MONITOR] = {"MONITOR",  0, 127,  64, PK_NUM},
     [G_LIVE_FREEZE]  = {"FREEZE",   0,   1,   0, PK_LIST},
+    [G_ARP_ON]       = {"ARP",      0,   1,   0, PK_LIST},
+    [G_ARP_MODE]     = {"PATTERN",  0,   5,   0, PK_LIST},
+    [G_ARP_RATE]     = {"RATE",     0,   5,   3, PK_LIST},
+    [G_ARP_OCT]      = {"OCTAVES",  1,   4,   1, PK_NUM},
+    [G_ARP_GATE]     = {"GATE",     0, 127,  80, PK_PCT},
+    [G_ARP_LATCH]    = {"LATCH",    0,   1,   0, PK_LIST},
+    [G_ARP_SWING]    = {"SWING",    0, 127,   0, PK_PCT},
+    [G_ARP_VELO]     = {"VELOCITY", 0,   2,   0, PK_LIST},
 };
 
 const struct tp_param_info *tempura_emitter_info(unsigned p) { return p < EP_COUNT ? &emitter_info[p] : NULL; }
@@ -105,6 +113,9 @@ static const char *const midi_mode_names[] = {"OMNI", "CH 1-4"};
 static const char *const key_out_names[] = {"OFF", "USB", "BLE", "USB+BLE"};
 static const char *const at_names[] = {"OFF", "CUTOFF", "LEVEL", "SIZE", "SPRAY", "LFO AMT"};
 static const char *const live_names[] = {"BT AUDIO", "USB", "BT+USB"};
+static const char *const arp_mode_names[] = {"UP", "DOWN", "UP+DOWN", "RANDOM", "AS PLAYD", "CHORD"};
+static const char *const arp_rate_names[] = {"1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32"};
+static const char *const arp_velo_names[] = {"AS KEY", "FIXED", "ACCENT"};
 
 const char *tempura_list_name(const struct tp_param_info *info, int v)
 {
@@ -128,6 +139,11 @@ const char *tempura_list_name(const struct tp_param_info *info, int v)
     if (info == &global_info[G_AT_DEST]) PICK(at_names);
     if (info == &global_info[G_LIVE_SRC]) PICK(live_names);
     if (info == &global_info[G_LIVE_FREEZE]) PICK(onoff_names);
+    if (info == &global_info[G_ARP_ON]) PICK(onoff_names);
+    if (info == &global_info[G_ARP_MODE]) PICK(arp_mode_names);
+    if (info == &global_info[G_ARP_RATE]) PICK(arp_rate_names);
+    if (info == &global_info[G_ARP_LATCH]) PICK(onoff_names);
+    if (info == &global_info[G_ARP_VELO]) PICK(arp_velo_names);
 #undef PICK
     return "?";
 }
