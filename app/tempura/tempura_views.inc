@@ -322,61 +322,6 @@ static void view_pitch(void)
         ctext(120, VY1 - 9, ce->quant >= 2 ? "SPRAY JUMPS OCTAVES" : ce->quant == 1 ? "SPRAY SNAPS TO SEMITONES" : "SPRAY IS SMOOTH", 1, C_DIM);
     }
 }
-static void view_mix(void)
-{
-    const struct tp_cooked_emitter *ce = &tp_cook.e[sel];
-    const int16_t *p = canvas.ep[sel];
-    uint16_t ec = emitter_color[sel];
-    if (band_hits(VY0, VY1)) { vbar(14, VY0 + 12, VY1 - 12, 16, vnorm(p[EP_LEVEL]), ec); }
-    if (band_hits(VY0, VY0 + 10)) { gfx_text(10, VY0, "LVL", 1, C_DIM); gfx_text(52, VY0, "STEREO", 1, C_DIM); }
-    int fx0 = 56, fx1 = 226, fy = VY0 + 34;
-    if (band_hits(fy - 16, fy + 18)) {
-        int w = fx1 - fx0, cxp = fx0 + (int)((ce->pan + 1.0f) * 0.5f * (float)w);
-        int sp = (int)(ce->pan_spray * 0.5f * (float)w);
-        gfx_fill(cxp - sp, fy - 8, 2 * sp + 1, 17, gfx_mix(C_BG, ec, 60));
-        gfx_hline(fx0, fy, w, C_DIM);
-        gfx_vline(fx0 + w / 2, fy - 4, 9, C_DIM);
-        gfx_text(fx0 - 8, fy - 3, "L", 1, C_DIM); gfx_text(fx1 + 3, fy - 3, "R", 1, C_DIM);
-        dot(cxp, fy, 3, ec);
-    }
-    int bx0 = 56, bx1 = 226, by0 = VY0 + 66, by1 = VY1 - 14;
-    if (band_hits(by0 - 12, by1 + 12)) {
-        if (band_hits(by0 - 12, by0 - 2)) gfx_text(bx0, by0 - 11, "VELOCITY TO LEVEL", 1, C_DIM);
-        gfx_rect(bx0, by0, bx1 - bx0, by1 - by0, C_GRIDL);
-        int prev = by1;
-        for (int x = 0; x < bx1 - bx0; ++x) {
-            float v = (float)x / (float)(bx1 - bx0), g = 1.0f - ce->velo * (1.0f - v * v);
-            int y = vy(g, 0.0f, 1.0f, by0 + 2, by1 - 2);
-            int lo = y < prev ? y : prev, hi = y < prev ? prev : y;
-            gfx_vline(bx0 + x, lo, hi - lo + 1, ec);
-            prev = y;
-        }
-    }
-}
-static void view_mode(void)
-{
-    const struct tp_cooked_emitter *ce = &tp_cook.e[sel];
-    const int16_t *p = canvas.ep[sel];
-    uint16_t ec = emitter_color[sel];
-    if (band_hits(VY0, VY0 + 18)) ctext(120, VY0 + 2, tempura_list_name(tempura_emitter_info(EP_MODE), ce->mode), 2, ec);
-    int ky = VY0 + 34, sy = VY0 + 80;
-    if (band_hits(ky - 2, sy + 40)) {
-        gfx_text(VX0, ky + 2, "KEYS", 1, C_DIM);
-        gfx_fill(60, ky, 80, 8, C_DIM); gfx_fill(110, ky + 12, 80, 8, C_DIM);
-        gfx_text(VX0, sy + 2, "SOUND", 1, C_DIM);
-        if (ce->mode == MODE_POLY) { gfx_fill(60, sy, 80, 8, ec); gfx_fill(110, sy + 12, 80, 8, ec); }
-        else if (ce->mode == MODE_LATCH) { gfx_fill(60, sy, VX1 - 60, 8, ec); gfx_fill(110, sy + 12, VX1 - 110, 8, ec); gfx_text(150, sy + 26, "KEEPS PLAYING", 1, C_DIM); }
-        else {
-            /* One voice: glides to the new note when the second key comes in. */
-            float glide = p[EP_GLIDE] ? 0.002f * vexp2((float)p[EP_GLIDE] * (10.0f / 127.0f)) : 0.0f;
-            int gw = glide > 0.0f ? (int)vclamp(vlog2(glide / 0.002f) * 6.0f, 1.0f, 60.0f) : 0;
-            gfx_fill(60, sy + 10, 50, 8, ec);
-            for (int x = 0; x <= gw; ++x) gfx_fill(110 + x, sy + 10 - (gw ? x * 10 / gw : 10), 1, 8, ec);
-            gfx_fill(110 + gw, sy, 80 - gw, 8, ec);
-            if (gw) { char b[16]; seconds_label(b, glide); gfx_text(110, sy + 24, "GLIDE ", 1, C_DIM); gfx_text(146, sy + 24, b, 1, C_TEXT); }
-        }
-    }
-}
 static void view_env(void)
 {
     uint16_t ec = emitter_color[sel];
@@ -602,8 +547,6 @@ static void draw_view(unsigned view)
     case V_GRAIN: view_grain(); break;
     case V_POSITION: view_position(); break;
     case V_PITCH: view_pitch(); break;
-    case V_MIX: view_mix(); break;
-    case V_MODE: view_mode(); break;
     case V_ENV: view_env(); break;
     case V_FILTER: view_filter(); break;
     case V_LFO: view_lfo(); break;

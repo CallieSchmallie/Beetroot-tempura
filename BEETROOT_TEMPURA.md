@@ -42,7 +42,7 @@ PAGE=E1, K1–K4=E2–E5, MAIN=E6, swap them at the top of `handle_encoders()` i
 
 ## Section screens
 
-HOME and the GLO settings pages show the canvas. Every other section replaces it with a picture of
+HOME, EDIT · MIX, EDIT · PLAY MODE and the GLO settings pages show the canvas. Every other section replaces it with a picture of
 what its knobs change, drawn from the engine's own values:
 
 | Page | Screen |
@@ -50,8 +50,6 @@ what its knobs change, drawn from the engine's own values:
 | EDIT · GRAIN | One grain's window shape, and the summed grain cloud over time with each grain's start (red = reversed). Shows the overlap. |
 | EDIT · POSITION | The 8 tracks as lanes with their waveforms, the emitter's cells, live grains, and spray along (amber) and across (teal) tracks. |
 | EDIT · PITCH | A ±2 octave ladder with the emitter's pitch, its spray range or octave jumps. |
-| EDIT · MIX | Level, the stereo position with pan spray, and the velocity curve. |
-| EDIT · PLAY MODE | How keys turn into voices in POLY, MONO (with the glide) and LATCH. |
 | ENV | The ADSR curve with times, and a dot that follows the sound. |
 | LFO · FILTER | The filter's frequency response, and where the envelope sweeps it. |
 | LFO · LFO | Two cycles of the wave at its depth, its destination, and a moving playhead. |

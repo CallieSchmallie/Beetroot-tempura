@@ -49,7 +49,7 @@ enum { K_EMITTER, K_TRACK, K_GLOBAL, K_BLE, K_SYSTEM, K_CANVAS };
 struct page { const char *title; uint8_t kind, view; int8_t p[4]; };
 enum { S_HOME, S_EDIT, S_ENV, S_LFO, S_FX, S_TRACK, S_SET, S_CANVAS, S_ARP, SECTIONS };
 enum {
-    V_GRID, V_GRAIN, V_POSITION, V_PITCH, V_MIX, V_MODE, V_ENV, V_FILTER, V_LFO,
+    V_GRID, V_GRAIN, V_POSITION, V_PITCH, V_ENV, V_FILTER, V_LFO,
     V_SENDS, V_MODFX, V_DELAY, V_REVERB, V_TRACK, V_ARP
 };
 static const struct page home_pages[] = {
@@ -59,8 +59,8 @@ static const struct page edit_pages[] = {
     {"GRAIN", K_EMITTER, V_GRAIN, {EP_RATE, EP_SIZE, EP_SHAPE, EP_REVERSE}},
     {"POSITION", K_EMITTER, V_POSITION, {EP_POS, EP_SPRAY_Y, EP_SPRAY_X, EP_SCAN}},
     {"PITCH", K_EMITTER, V_PITCH, {EP_OCTAVE, EP_SEMI, EP_FINE, EP_PITCH_SPRAY}},
-    {"MIX", K_EMITTER, V_MIX, {EP_LEVEL, EP_PAN, EP_PAN_SPRAY, EP_VELO}},
-    {"PLAY MODE", K_EMITTER, V_MODE, {EP_MODE, EP_QUANT, EP_ALIGN_X, EP_GLIDE}},
+    {"MIX", K_EMITTER, V_GRID, {EP_LEVEL, EP_PAN, EP_PAN_SPRAY, EP_VELO}},
+    {"PLAY MODE", K_EMITTER, V_GRID, {EP_MODE, EP_QUANT, EP_ALIGN_X, EP_GLIDE}},
 };
 static const struct page env_pages[] = {
     {"ENVELOPE", K_EMITTER, V_ENV, {EP_ATTACK, EP_DECAY, EP_SUSTAIN, EP_RELEASE}},
