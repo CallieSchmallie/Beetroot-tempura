@@ -120,6 +120,8 @@ TP_INLINE void tp_zero(void *p, unsigned bytes)
 }
 
 /* ================================================================ init */
+/* Control-task code below (until the slots section) is optimised for size. */
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
 static void build_windows(void)
 {
     for (unsigned i = 0; i <= 256; ++i) {
@@ -196,8 +198,9 @@ void tempura_block_clock(uint32_t (*used_ticks)(void), uint32_t block_ticks)
 void tempura_set_safe_mode(unsigned on) { safe_mode = on != 0; }
 unsigned tempura_safe_mode(void) { return safe_mode; }
 
+#pragma clang attribute pop
 /* ============================================================== slots */
-void tempura_bind_slot(unsigned slot, const uint8_t *data, unsigned bytes, unsigned frames, const char *name)
+__attribute__((minsize)) void tempura_bind_slot(unsigned slot, const uint8_t *data, unsigned bytes, unsigned frames, const char *name)
 {
     if (slot >= TP_SLOTS) return;
     if (data && (!frames || bytes != ((frames + CHUNK - 1U) / CHUNK) * CHUNK_BYTES)) data = NULL;
@@ -420,11 +423,11 @@ static struct tp_arp arps[TP_EMITTERS];
 static uint8_t arp_was_on;
 static uint32_t arp_rng = 0x2545f491U;
 
-TP_INLINE void arp_sort(uint8_t *a, unsigned n)
+static TP_AUDIO __attribute__((minsize, noinline)) void arp_sort(uint8_t *a, unsigned n)
 {
     for (unsigned i = 1; i < n; ++i) { uint8_t x = a[i]; unsigned j = i; while (j && a[j - 1] > x) { a[j] = a[j - 1]; --j; } a[j] = x; }
 }
-TP_AUDIO unsigned tp_arp_sequence(const uint8_t *held, unsigned n, unsigned mode, unsigned octaves, uint8_t *out, unsigned max)
+__attribute__((minsize)) TP_AUDIO unsigned tp_arp_sequence(const uint8_t *held, unsigned n, unsigned mode, unsigned octaves, uint8_t *out, unsigned max)
 {
     if (!n) return 0;
     if (n > ARP_HELD) n = ARP_HELD;
@@ -450,7 +453,7 @@ TP_AUDIO unsigned tp_arp_sequence(const uint8_t *held, unsigned n, unsigned mode
     return len;
 }
 
-static TP_AUDIO void arp_release(struct tp_arp *a, unsigned emitter)
+__attribute__((minsize)) static TP_AUDIO void arp_release(struct tp_arp *a, unsigned emitter)
 {
     for (unsigned i = 0; i < a->nsounding; ++i) {
         struct tp_event off = {EV_OFF, (uint8_t)emitter, a->sounding[i], 0, 255, ARP_TAG, 0};
@@ -458,11 +461,11 @@ static TP_AUDIO void arp_release(struct tp_arp *a, unsigned emitter)
     }
     a->nsounding = 0;
 }
-static TP_AUDIO void arp_clear(void)
+__attribute__((minsize)) static TP_AUDIO void arp_clear(void)
 {
     for (unsigned e = 0; e < TP_EMITTERS; ++e) { arp_release(&arps[e], e); arps[e].count = arps[e].phys = 0; arps[e].running = 0; }
 }
-static TP_AUDIO void arp_key(const struct tp_event *e)
+__attribute__((minsize)) static TP_AUDIO void arp_key(const struct tp_event *e)
 {
     struct tp_arp *a = &arps[e->emitter];
     const struct tp_cooked_fx *f = &tp_cook.fx;
@@ -488,7 +491,7 @@ static TP_AUDIO void arp_key(const struct tp_event *e)
         break;
     }
 }
-static TP_AUDIO void arp_block(float block_s, float bpm_now)
+__attribute__((minsize)) static TP_AUDIO void arp_block(float block_s, float bpm_now)
 {
     const struct tp_cooked_fx *f = &tp_cook.fx;
     if (!f->arp_on) {
@@ -548,7 +551,7 @@ static TP_AUDIO void arp_block(float block_s, float bpm_now)
         a->off_s = len * f->arp_gate;
     }
 }
-void tempura_arp_view(unsigned emitter, struct tp_arp_view *v)
+__attribute__((minsize)) void tempura_arp_view(unsigned emitter, struct tp_arp_view *v)
 {
     memset(v, 0, sizeof *v);
     if (emitter >= TP_EMITTERS) return;
@@ -1084,6 +1087,8 @@ TP_AUDIO void tempura_live_feed(const int16_t *bt, const int32_t *usb, unsigned 
 unsigned tempura_live_head(void) { if (!live_len) return 0; return (unsigned)((uint64_t)live_write * 160U / live_len); }
 
 /* =========================================================== cooking */
+/* Control-task code from here to the end is optimised for size. */
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
 static float norm(int v) { return (float)v * (1.0f / 127.0f); }
 void tempura_engine_cook(const struct tp_canvas *c)
 {
@@ -1308,3 +1313,4 @@ uint8_t tempura_track_peak(unsigned track, unsigned pixel)
 {
     return track < TP_TRACKS && pixel < 160 ? peaks[track][pixel] : 0;
 }
+#pragma clang attribute pop

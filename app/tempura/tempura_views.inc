@@ -10,6 +10,13 @@ enum { VX0 = 8, VX1 = 232, VW = VX1 - VX0, VY0 = 22, VY1 = 174 };
 #define C_GRIDL RGB(40, 32, 46)
 #define C_TEAL  RGB(48, 214, 192)
 
+/* Out-of-line math for drawing: the DSP versions are force-inlined at every
+ * call, which costs code space the FM-1 doesn't have. */
+static __attribute__((noinline)) float vexp2(float x) { return tp_exp2(x); }
+static __attribute__((noinline)) float vsin1(float x) { return tp_sin1(x); }
+static float vexp(float x) { return vexp2(x * 1.442695041f); }
+static float vcos1(float x) { return vsin1(x + 0.25f); }
+static float vmax(float a, float b) { return a > b ? a : b; }
 static int16_t plot_a[VW], plot_b[VW];
 static uint16_t ticks[64];             /* grain starts (x | reversed << 12) */
 static uint8_t plot_n;                 /* generic count prepared for the view */
@@ -20,7 +27,7 @@ static int band_hits(int y0, int y1) { return gfx_top < y1 && gfx_top + GFX_BAND
 static float vnorm(int v) { return (float)v * (1.0f / 127.0f); }
 static float vclamp(float x, float a, float b) { return x < a ? a : x > b ? b : x; }
 static float vlog2(float x);
-static float vsqrt(float x) { return x > 0.0f ? tp_exp2(0.5f * vlog2(x)) : 0.0f; }
+static float vsqrt(float x) { return x > 0.0f ? vexp2(0.5f * vlog2(x)) : 0.0f; }
 /* log2 for drawing only: exponent bits plus a quadratic for the mantissa. */
 static float vlog2(float x)
 {
@@ -88,7 +95,7 @@ static float lfo_at(unsigned shape, float t)
 {
     float ph = t - (float)(int)t;
     unsigned cyc = (unsigned)(int)t;
-    if (shape == 0) return tp_sin1(ph);
+    if (shape == 0) return vsin1(ph);
     if (shape == 1) return ph < 0.5f ? ph * 4.0f - 1.0f : 3.0f - ph * 4.0f;
     if (shape == 2) return 1.0f - ph * 2.0f;
     if (shape == 3) return ph < 0.5f ? 1.0f : -1.0f;
@@ -110,7 +117,7 @@ static void view_prepare(unsigned view)
         const float *w = tempura_window(ce->shape);
         for (int i = 0; i < VW; ++i) plot_a[i] = (int16_t)vy(w[i * 256 / (VW - 1)], 0.0f, 1.0f, VY0 + 8, VY0 + 58);
         float size = ce->size_s, rate = ce->rate_hz, overlap = size * rate;
-        float span = vclamp(tp_maxf(size * 3.0f, 6.0f / rate), 0.02f, 6.0f);
+        float span = vclamp(vmax(size * 3.0f, 6.0f / rate), 0.02f, 6.0f);
         view_f[0] = overlap; view_f[1] = span;
         /* Summed grain windows over the span: what the grain cloud's
          * loudness looks like. Very dense clouds are drawn flat. */
@@ -132,16 +139,16 @@ static void view_prepare(unsigned view)
                 }
                 if (k < 64U) { ticks[k] = (uint16_t)((x0 < 0 ? 0 : x0) | (rev << 12)); plot_n = (uint8_t)(k + 1U); }
             }
-            for (int i = 0; i < VW; ++i) peak = tp_maxf(peak, sum[i]);
+            for (int i = 0; i < VW; ++i) peak = vmax(peak, sum[i]);
         }
         if (peak <= 0.0f) plot_n = 0;
         for (int i = 0; i < VW; ++i) plot_b[i] = (int16_t)vy(peak > 0.0f ? sum[i] / peak : 0.75f, 0.0f, 1.0f, VY0 + 84, VY1 - 12);
         break;
     }
     case V_ENV: {
-        float a = 0.001f * tp_exp2((float)p[EP_ATTACK] * (13.0f / 127.0f));
-        float d = 0.005f * tp_exp2((float)p[EP_DECAY] * (11.0f / 127.0f));
-        float r = 0.005f * tp_exp2((float)p[EP_RELEASE] * (11.0f / 127.0f));
+        float a = 0.001f * vexp2((float)p[EP_ATTACK] * (13.0f / 127.0f));
+        float d = 0.005f * vexp2((float)p[EP_DECAY] * (11.0f / 127.0f));
+        float r = 0.005f * vexp2((float)p[EP_RELEASE] * (11.0f / 127.0f));
         float s = vnorm(p[EP_SUSTAIN]);
         float sa = vsqrt(a), sd = vsqrt(d), sr = vsqrt(r), tot = sa + sd + sr;
         float avail = (float)VW * 0.80f;
@@ -151,20 +158,20 @@ static void view_prepare(unsigned view)
         for (int i = 0; i < VW; ++i) {
             float e;
             if (i < xa) e = xa ? (float)i / (float)xa : 1.0f;
-            else if (i < xd) e = s + (1.0f - s) * tp_exp(-6.9f * (float)(i - xa) / (float)(xd - xa > 0 ? xd - xa : 1));
+            else if (i < xd) e = s + (1.0f - s) * vexp(-6.9f * (float)(i - xa) / (float)(xd - xa > 0 ? xd - xa : 1));
             else if (i < xs) e = s;
-            else e = s * tp_exp(-6.9f * (float)(i - xs) / (float)(VW - xs > 1 ? VW - xs : 1));
+            else e = s * vexp(-6.9f * (float)(i - xs) / (float)(VW - xs > 1 ? VW - xs : 1));
             plot_a[i] = (int16_t)vy(e, 0.0f, 1.0f, VY0 + 14, VY1 - 22);
         }
         break;
     }
     case V_FILTER: {
-        float fc = 20.0f * tp_exp2(ce->cutoff_oct), q = ce->res_q;
-        float fc2 = 20.0f * tp_exp2(vclamp(ce->cutoff_oct + ce->env_filter_oct, 0.0f, 10.0f));
+        float fc = 20.0f * vexp2(ce->cutoff_oct), q = ce->res_q;
+        float fc2 = 20.0f * vexp2(vclamp(ce->cutoff_oct + ce->env_filter_oct, 0.0f, 10.0f));
         for (int pass = 0; pass < 2; ++pass) {
             float c = pass ? fc2 : fc;
             for (int i = 0; i < VW; ++i) {
-                float f = 20.0f * tp_exp2(10.0f * (float)i / (float)VW), w = f / c, w2 = w * w;
+                float f = 20.0f * vexp2(10.0f * (float)i / (float)VW), w = f / c, w2 = w * w;
                 float den = (1.0f - w2) * (1.0f - w2) + w2 / (q * q);
                 float h2 = ce->filter == 1 ? 1.0f / den : ce->filter == 2 ? (w2 / (q * q)) / den : ce->filter == 3 ? w2 * w2 / den : 1.0f;
                 float db = 3.0103f * vlog2(h2);
@@ -189,8 +196,8 @@ static void view_prepare(unsigned view)
         depth *= fx->mod_depth;
         for (int i = 0; i < VW; ++i) {
             float ph = 2.0f * (float)i / (float)VW;
-            plot_a[i] = (int16_t)vy((base + depth * (0.5f + 0.5f * tp_sin1(ph))) * 1000.0f, 0.0f, 21.0f, VY0 + 26, VY1 - 18);
-            plot_b[i] = (int16_t)vy((base + depth * (0.5f + 0.5f * tp_cos1(ph))) * 1000.0f, 0.0f, 21.0f, VY0 + 26, VY1 - 18);
+            plot_a[i] = (int16_t)vy((base + depth * (0.5f + 0.5f * vsin1(ph))) * 1000.0f, 0.0f, 21.0f, VY0 + 26, VY1 - 18);
+            plot_b[i] = (int16_t)vy((base + depth * (0.5f + 0.5f * vcos1(ph))) * 1000.0f, 0.0f, 21.0f, VY0 + 26, VY1 - 18);
         }
         view_f[0] = fx->mod_rate;
         break;
@@ -201,7 +208,7 @@ static void view_prepare(unsigned view)
         float span = vclamp(rt * 1.15f, 0.3f, 14.0f);
         view_f[0] = rt;
         for (int i = 0; i < VW; ++i) {
-            float t = span * (float)i / (float)VW, env = tp_exp2(-9.966f * t / rt);
+            float t = span * (float)i / (float)VW, env = vexp2(-9.966f * t / rt);
             float nl = 0.25f + 0.75f * vrand((uint32_t)i * 7919U), nr = 0.25f + 0.75f * vrand((uint32_t)i * 104729U + 3U);
             nr = nl + (nr - nl) * fx->rev_width;
             plot_a[i] = (int16_t)(env * nl * 54.0f);
@@ -364,7 +371,7 @@ static void view_mode(void)
         else if (ce->mode == MODE_LATCH) { gfx_fill(60, sy, VX1 - 60, 8, ec); gfx_fill(110, sy + 12, VX1 - 110, 8, ec); gfx_text(150, sy + 26, "KEEPS PLAYING", 1, C_DIM); }
         else {
             /* One voice: glides to the new note when the second key comes in. */
-            float glide = p[EP_GLIDE] ? 0.002f * tp_exp2((float)p[EP_GLIDE] * (10.0f / 127.0f)) : 0.0f;
+            float glide = p[EP_GLIDE] ? 0.002f * vexp2((float)p[EP_GLIDE] * (10.0f / 127.0f)) : 0.0f;
             int gw = glide > 0.0f ? (int)vclamp(vlog2(glide / 0.002f) * 6.0f, 1.0f, 60.0f) : 0;
             gfx_fill(60, sy + 10, 50, 8, ec);
             for (int x = 0; x <= gw; ++x) gfx_fill(110 + x, sy + 10 - (gw ? x * 10 / gw : 10), 1, 8, ec);
@@ -498,7 +505,7 @@ static void view_delay(void)
             float t = dt * (float)n;
             if (t > span || amp < 0.02f) break;
             int x = VX0 + (int)(t / span * (float)VW), h = (int)(vsqrt(amp) * 50.0f);
-            uint16_t c = gfx_mix(C_BG, C_TEAL, (unsigned)(255.0f * tp_maxf(0.25f, amp)));
+            uint16_t c = gfx_mix(C_BG, C_TEAL, (unsigned)(255.0f * vmax(0.25f, amp)));
             if (!fx->ping) gfx_fill(x, mid - h, width, 2 * h + 1, c);
             else if (n & 1U) gfx_fill(x, mid - h, width, h, c);
             else gfx_fill(x, mid + 1, width, h, c);

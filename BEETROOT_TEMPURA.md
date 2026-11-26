@@ -185,6 +185,11 @@ hard. GLO → SYSTEM shows CPU, the grain limit and an overload count.
   keyboard mode plays cells.
 - Canvases saved by older versions still load: their CRC covers their own
   length, and settings added since then take their defaults.
+- To fit the FM-1's app area, FM1 Open's 128 factory FM voices (which
+  Beetroot Tempura never plays) are replaced by one voice, "PIANO 1". That
+  frees about 10 KB of code and 16 KB of start-up RAM. FM voices you loaded
+  into the library are untouched. The engine's non-audio code and the
+  arpeggiator are now optimised for size.
 - Published at `/test-1.3.html` until it has run on a real FM-1. The main page
   still installs 1.2.
 
