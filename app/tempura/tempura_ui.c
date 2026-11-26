@@ -457,18 +457,18 @@ static void update_leds(void)
 static void draw_header(void)
 {
     if (gfx_top >= 16) return;
-    gfx_fill(0, 0, GFX_W, 16, C_BG);
+    gfx_vgrad(0, 0, GFX_W, 16, RGB(34, 14, 34), RGB(10, 4, 12));
     unsigned voices = tempura_voice_mask();
     for (unsigned e = 0; e < TP_EMITTERS; ++e) {
         int x = 2 + (int)e * 24;
         char label[3] = {'E', (char)('1' + e), 0};
-        if (e == sel) { gfx_fill(x, 2, 22, 12, emitter_color[e]); gfx_text(x + 5, 4, label, 1, C_BG); }
-        else { gfx_rect(x, 2, 22, 12, emitter_color[e]); gfx_text(x + 5, 4, label, 1, emitter_color[e]); }
+        if (e == sel) { gfx_rfill(x, 2, 22, 12, 3, emitter_color[e]); gfx_hline(x + 3, 3, 16, gfx_mix(emitter_color[e], C_TEXT, 140)); gfx_text(x + 5, 4, label, 1, C_BG); }
+        else { gfx_rfill(x, 2, 22, 12, 3, gfx_mix(C_BG, emitter_color[e], 60)); gfx_text(x + 5, 4, label, 1, emitter_color[e]); }
         if (voices & (1U << e)) gfx_fill(x + 18, 4, 2, 2, e == sel ? C_BG : C_TEXT);
         if (drone[e]) gfx_fill(x + 18, 9, 2, 2, e == sel ? C_BG : emitter_color[e]);
     }
     char name[13]; memcpy(name, canvas.name, 12); name[12] = 0;
-    gfx_text(100, 4, name, 1, C_TEXT);
+    gfx_label(100, 4, name, C_TEXT);
     char right[8];
     if (canvas.g[G_KEY_MODE] == KEYS_CELLS) memcpy(right, "CEL", 4);
     else { right[0] = 'O'; right[1] = octave < 0 ? '-' : '+'; right[2] = (char)('0' + (octave < 0 ? -octave : octave)); right[3] = 0; }
@@ -505,7 +505,7 @@ static void draw_grid(void)
             if (y < GY || y >= GY + CH * TP_ROWS) continue;
             unsigned r = (unsigned)(y - GY) / CH, in = (unsigned)(y - GY) % CH;
             if (in == CH - 1) continue;
-            gfx_hline(x, y, CW - 1, cell_bg(t, r));
+            gfx_hline(x, y, CW - 1, in == 0 ? gfx_mix(cell_bg(t, r), C_TEXT, 22) : cell_bg(t, r));
             if (!empty) {
                 unsigned peak = tempura_track_peak(t, (unsigned)(y - GY));
                 int half = (int)(peak * 13U / 255U);
@@ -556,17 +556,35 @@ static void draw_grid(void)
 static void knob(unsigned col, const char *label, const char *value, uint16_t color, int fill255)
 {
     int x = 4 + (int)col * 59;
-    gfx_text(x, 196, label, 1, C_DIM);
-    if (strlen(value) <= 4) gfx_text(x, 208, value, 2, color);
-    else gfx_text(x, 212, value, 1, color);
-    gfx_fill(x, 230, 54, 3, RGB(40, 34, 44));
-    if (fill255 >= 0) gfx_fill(x, 230, fill255 * 54 / 255, 3, color);
+    gfx_label(x, 196, label, RGB(150, 130, 150));
+    if (gfx_title_width(value, 0) <= 54) gfx_title(x, 207, value, gfx_mix(color, C_TEXT, 90), gfx_mix(color, C_BG, 70), GFX_SHADOW);
+    else gfx_label(x, 212, value, color);
+    gfx_rfill(x, 229, 54, 5, 2, RGB(44, 30, 46));
+    if (fill255 >= 0) {
+        int w = fill255 * 54 / 255;
+        if (w > 1) { gfx_rfill(x, 229, w, 5, 2, color); gfx_hline(x + 2, 230, w > 4 ? w - 4 : 1, gfx_mix(color, C_TEXT, 150)); }
+        gfx_fill(x + w - 1 < x ? x : x + w - 1, 227, 2, 9, C_TEXT);
+    }
 }
+/* 8x8 section icons, one byte per row, bit 7 on the left. */
+static const uint8_t section_icon[SECTIONS][8] = {
+    {0xee, 0xaa, 0xee, 0x00, 0xee, 0xaa, 0xee, 0x00},   /* HOME: canvas */
+    {0x10, 0x44, 0x00, 0x92, 0x00, 0x44, 0x10, 0x00},   /* EDIT: grains */
+    {0x20, 0x30, 0x58, 0x4e, 0x42, 0x81, 0x81, 0x00},   /* ENV */
+    {0x60, 0x90, 0x90, 0x09, 0x09, 0x06, 0x00, 0x00},   /* LFO */
+    {0x10, 0x54, 0x38, 0xfe, 0x38, 0x54, 0x10, 0x00},   /* FX */
+    {0x10, 0x52, 0x5a, 0xff, 0x5a, 0x52, 0x10, 0x00},   /* SCL: waveform */
+    {0x18, 0x5a, 0x24, 0xc3, 0xc3, 0x24, 0x5a, 0x18},   /* GLO: gear */
+    {0xfe, 0x82, 0xfe, 0x82, 0xba, 0xba, 0xfe, 0x00},   /* SAVE: disk */
+    {0x03, 0x03, 0x0c, 0x0c, 0x30, 0x30, 0xc0, 0xc0},   /* ARP: steps */
+};
 static void draw_title(const char *title, uint16_t color, const char *right)
 {
-    if (notice[0] && (int32_t)(fm1_millis() - notice_until) < 0) { gfx_text(4, 184, notice, 1, C_AMBER); return; }
-    gfx_text(4, 184, title, 1, color);
-    if (right) gfx_text(236 - gfx_text_width(right, 1), 184, right, 1, C_DIM);
+    for (int r = 0; r < 8; ++r)
+        for (int b = 0; b < 8; ++b) if (section_icon[section][r] & (0x80U >> b)) gfx_fill(4 + b, 183 + r, 1, 1, color);
+    if (notice[0] && (int32_t)(fm1_millis() - notice_until) < 0) { gfx_label(16, 184, notice, C_AMBER); return; }
+    gfx_label(16, 184, title, color);
+    if (right) gfx_label(236 - gfx_label_width(right), 184, right, RGB(150, 130, 150));
 }
 static void draw_params(const struct page *pg)
 {
@@ -721,8 +739,8 @@ static void draw(void)
     else draw_grid();
     if (gfx_top + GFX_BAND > PANEL_Y - 2) {
         if (gfx_top < PANEL_Y) gfx_fill(0, PANEL_Y - 2, GFX_W, 2, C_BG);
-        gfx_fill(0, PANEL_Y, GFX_W, GFX_H - PANEL_Y, C_PANEL);
-        gfx_hline(0, PANEL_Y, GFX_W, RGB(60, 40, 60));
+        gfx_vgrad(0, PANEL_Y, GFX_W, GFX_H - PANEL_Y, RGB(36, 16, 36), RGB(10, 5, 12));
+        for (int x = 0; x < GFX_W; ++x) gfx_fill(x, PANEL_Y, 1, 1, gfx_mix(C_BEET, C_AMBER, (unsigned)x * 255U / GFX_W));
         if (pg->kind == K_BLE) draw_ble();
         else if (pg->kind == K_SYSTEM) draw_system();
         else if (pg->kind == K_CANVAS) draw_canvas_page();
@@ -730,25 +748,155 @@ static void draw(void)
     }
 }
 
+/* ---- splash: a lit, battered beetroot, drawn per pixel ---- */
+static float sp_hash(int x, int y)
+{
+    uint32_t h = (uint32_t)x * 374761393U + (uint32_t)y * 668265263U;
+    h = (h ^ (h >> 13)) * 1274126177U;
+    return (float)((h ^ (h >> 16)) & 1023U) * (1.0f / 1023.0f);
+}
+static uint16_t sp_rgb(float r, float g, float b)
+{
+    r = r < 0 ? 0 : r > 1 ? 1 : r; g = g < 0 ? 0 : g > 1 ? 1 : g; b = b < 0 ? 0 : b > 1 ? 1 : b;
+    return RGB((unsigned)(r * 255.0f), (unsigned)(g * 255.0f), (unsigned)(b * 255.0f));
+}
+static __attribute__((noinline)) float sp_sin(float x) { return tp_sin1(x); }
+static float sp_sqrt(float x) { if (x <= 0.0f) return 0.0f; float r = x > 1.0f ? x : 1.0f; for (int i = 0; i < 6; ++i) r = 0.5f * (r + x / r); return r; }
+enum { BEET_X = 120, BEET_Y = 94, BEET_R = 34 };
+/* Leaves: base, direction (unit), length, half width. */
+static const struct { int8_t bx; float dx, dy, len, wid; } leaves[5] = {
+    {-8, -0.92f, -0.40f, 50.0f, 13.0f}, {8, 0.94f, -0.35f, 48.0f, 12.0f},
+    {-4, -0.52f, -0.85f, 60.0f, 16.0f}, {4, 0.58f, -0.81f, 58.0f, 15.0f}, {0, 0.04f, -1.0f, 66.0f, 17.0f},
+};
+/* Returns 1 and the colour when (x, y) is on a leaf or stem. */
+static int sp_leaf(int x, int y, float *r, float *g, float *b)
+{
+    int hit = 0;
+    for (unsigned i = 0; i < 5; ++i) {
+        float px = (float)(x - BEET_X - leaves[i].bx), py = (float)(y - (BEET_Y - BEET_R + 4));
+        float a = px * leaves[i].dx + py * leaves[i].dy, c = -px * leaves[i].dy + py * leaves[i].dx;
+        float ac = c < 0 ? -c : c;
+        if (a < 0.0f || a > leaves[i].len) continue;
+        if (a < 16.0f) {                           /* red stem */
+            if (ac < 2.4f - a * 0.05f) { float l = 0.55f + 0.45f * (c > 0 ? 1.0f : 0.3f); *r = 0.78f * l; *g = 0.08f * l; *b = 0.32f * l; hit = 1; }
+            continue;
+        }
+        float t = (a - 12.0f) / (leaves[i].len - 12.0f);
+        float hw = leaves[i].wid * 4.0f * t * (1.0f - t) * (1.15f - 0.35f * t) * (1.0f + 0.10f * sp_sin(a * 0.16f + c * 0.05f));
+        if (ac >= hw) continue;
+        float side = c / hw;                        /* -1..1 across the blade */
+        float l = 0.35f + 0.35f * side + 0.45f * t * (1.0f - side * side);   /* lit, folded blade */
+        float gr = 0.04f + 0.30f * l, gg = 0.16f + 0.62f * l, gb = 0.06f + 0.22f * l;
+        float vein = a * 0.16f - ac * 0.11f;
+        vein -= (float)(int)vein;
+        if (ac < 0.9f) { gr = 0.72f; gg = 0.10f; gb = 0.30f; }                  /* red midrib */
+        else if (vein < 0.08f) { gr = gr * 0.5f + 0.32f; gg *= 0.75f; gb = gb * 0.5f + 0.12f; } /* red side veins */
+        if (hw - ac < 1.0f) { gr *= 0.6f; gg *= 0.6f; gb *= 0.6f; }
+        *r = gr; *g = gg; *b = gb; hit = 1;
+    }
+    return hit;
+}
 static void boot_splash(void)
 {
-    if (gfx_top < 80 || gfx_top >= 170) { gfx_fill(0, gfx_top, GFX_W, GFX_BAND, C_BG); }
-    else gfx_fill(0, gfx_top, GFX_W, GFX_BAND, C_BG);
-    /* A beetroot: round body, leaves and a thin root. */
     for (int y = gfx_top; y < gfx_top + GFX_BAND; ++y) {
-        int dy = y - 96;
-        if (dy > -34 && dy < 34) {
-            int half = 0;
-            while ((half + 1) * (half + 1) + dy * dy < 34 * 34) ++half;
-            gfx_hline(120 - half, y, half * 2, gfx_mix(C_BEET, RGB(120, 10, 60), (unsigned)(dy + 34) * 3U));
+        uint16_t *row = gfx_px + (y - gfx_top) * GFX_W;
+        for (int x = 0; x < GFX_W; ++x) {
+            float dx = (float)(x - BEET_X), dy = (float)(y - BEET_Y);
+            float dist = sp_sqrt(dx * dx + dy * dy), d = dist * (1.0f / 160.0f);
+            /* Background: deep plum glow, light rays from behind the beet, a halo. */
+            float r = 0.20f - 0.18f * d, g = 0.025f - 0.02f * d, b = 0.17f - 0.14f * d;
+            float adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
+            float ang = adx + ady > 0.0f ? (dy < 0 ? dx / (adx + ady) : 2.0f - dx / (adx + ady)) : 0.0f;
+            float ray = (0.5f + 0.5f * sp_sin(ang * 3.5f)) * (1.0f - d) * 0.10f;
+            r += ray; g += ray * 0.45f; b += ray * 0.5f;
+            float halo = (dist - BEET_R) * (1.0f / 16.0f);
+            halo = halo > 0.0f && halo < 3.0f ? 0.35f * (1.0f - halo / 3.0f) * (1.0f - halo / 3.0f) : 0.0f;
+            r += halo * 0.9f; g += halo * 0.12f; b += halo * 0.45f;
+            if (sp_hash(x, y) > 0.9965f) { r += 0.5f; g += 0.35f; b += 0.3f; }   /* drifting grains */
+            float gx = dx * (1.0f / 46.0f), gy = (float)(y - (BEET_Y + 64)) * (1.0f / 6.0f), gs = gx * gx + gy * gy;
+            if (gs < 1.0f) { r *= 0.35f + 0.65f * gs; g *= 0.35f + 0.65f * gs; b *= 0.35f + 0.65f * gs; }   /* shadow on the ground */
+            if (y > 20 && y < BEET_Y - 24 && (x < 70 || x > 170)) {       /* steam off the hot tempura */
+                float side = x < 70 ? 52.0f : 188.0f, wob = side + 7.0f * sp_sin((float)y * 0.035f + side);
+                float dd = (float)x - wob; dd = dd < 0 ? -dd : dd;
+                if (dd < 2.5f) { float a = (1.0f - dd / 2.5f) * 0.18f * (float)(y - 20) / (float)(BEET_Y - 44); r += a; g += a; b += a * 1.1f; }
+            }
+
+            float lr, lg, lb;
+            if (sp_leaf(x, y, &lr, &lg, &lb)) { r = lr; g = lg; b = lb; }
+
+            /* Body: round on top, tapering to a tail. */
+            float u = dx * (1.0f / BEET_R), v = dy * (1.0f / BEET_R), w;
+            if (v < -1.0f || v > 1.75f) w = 0.0f;
+            else if (v <= 0.3f) w = sp_sqrt(1.0f - v * v);
+            else { float t = (1.75f - v) * (1.0f / 1.45f); w = 0.954f * t * sp_sqrt(t); }
+            float au = u < 0 ? -u : u;
+            float edge = 0.40f + 0.06f * sp_sin(u * 2.1f) + 0.06f * sp_hash(x >> 2, 7);   /* where the batter starts */
+            int battered = v > edge && v < 1.5f;
+            float wb = battered ? w + 0.07f + 0.05f * sp_hash(x >> 1, y >> 1) : w;   /* crumbs widen the outline */
+            if (w > 0.0f && au < wb) {
+                float nx = au < w ? u / w : (u < 0 ? -1.0f : 1.0f), ny = v < 0.3f ? v : 0.3f;
+                float nz = sp_sqrt(1.0f - nx * nx) * sp_sqrt(1.0f - ny * ny);
+                float diff = -0.55f * nx - 0.55f * ny + 0.63f * nz;
+                diff = diff < 0.0f ? 0.0f : diff;
+                if (battered) {
+                    /* Tempura: golden, lumpy, with bright crisp bits and dark pits. */
+                    /* Lumps: two crossed ripples, lit from the upper left. */
+                    float fx = (float)x, fy = (float)y;
+                    float h0 = sp_sin(fx * 0.085f + sp_sin(fy * 0.05f) * 0.3f) * sp_sin(fy * 0.09f + sp_sin(fx * 0.04f) * 0.3f);
+                    float h1 = sp_sin((fx - 1.5f) * 0.085f + sp_sin((fy - 1.5f) * 0.05f) * 0.3f) * sp_sin((fy - 1.5f) * 0.09f + sp_sin((fx - 1.5f) * 0.04f) * 0.3f);
+                    h0 = h0 < 0 ? -h0 : h0; h1 = h1 < 0 ? -h1 : h1;   /* every lump bulges out */
+                    float lump = (h0 - h1) * 1.6f;          /* facing the light (upper left) */
+                    float n = sp_hash(x, y + 77);
+                    float l = 0.42f + 0.45f * diff + lump * 0.30f + 0.18f * h0 + 0.08f * (n - 0.5f);
+                    if (v < edge + 0.05f) l *= 0.7f;
+                    r = 1.05f * l; g = 0.68f * l; b = 0.22f * l;
+                    if (lump > 0.25f && n > 0.55f) { r += 0.22f; g += 0.20f; b += 0.14f; }   /* crisp glints */
+                    if (h0 < 0.08f) { r *= 0.7f; g *= 0.65f; b *= 0.6f; }                  /* creases between lumps */
+                } else {
+                    float ring = 1.0f - 0.07f * sp_sin(v * 4.2f + 0.3f * sp_sin(u * 0.5f));
+                    float l = (0.25f + 0.80f * diff) * ring;
+                    r = 0.80f * l; g = 0.07f * l; b = 0.32f * l;
+                    float spec = diff - 0.80f;
+                    if (spec > 0.0f) { spec *= 6.0f; r += spec * 0.9f; g += spec * 0.6f; b += spec * 0.75f; }
+                    float rim = nx > 0.0f ? nx * nx * nx * nx * nx : 0.0f;          /* purple back light */
+                    r += rim * 0.75f; g += rim * 0.16f; b += rim * 0.95f;
+                    if (sp_hash(x, y + 500) > 0.985f) { r *= 0.55f; g *= 0.55f; b *= 0.55f; }
+                    if (w - au < 0.05f) { r *= 0.55f; g *= 0.5f; b *= 0.55f; }
+                }
+            }
+            /* The root tail pokes out of the batter. */
+            if (y >= BEET_Y + 50 && y < BEET_Y + 74) {
+                int t = y - (BEET_Y + 50);
+                int rx = BEET_X + (int)(4.0f * sp_sin((float)t * 0.045f));
+                if (x == rx || (t < 8 && x == rx + 1)) { r = 0.55f; g = 0.06f; b = 0.22f; }
+            }
+            row[x] = sp_rgb(r, g, b);
         }
-        if (y >= 128 && y < 150) gfx_hline(119, y, 2, C_BEET);
-        if (y >= 46 && y < 64) { int w = (64 - y) / 2; gfx_hline(104 - w, y, w + 4, C_GREEN); gfx_hline(132, y, w + 4, C_GREEN); gfx_hline(118, y - 6, 4, C_GREEN); }
     }
-    gfx_text(120 - gfx_text_width("BEETROOT", 2) / 2, 168, "BEETROOT", 2, C_TEXT);
-    gfx_text(120 - gfx_text_width("TEMPURA", 2) / 2, 190, "TEMPURA", 2, C_AMBER);
-    gfx_text(120 - gfx_text_width("GRANULAR CANVAS FOR FM-1", 1) / 2, 214, "GRANULAR CANVAS FOR FM-1", 1, C_DIM);
-    gfx_text(120 - gfx_text_width("HOLD HOME FOR SAFE MODE", 1) / 2, 228, "HOLD HOME FOR SAFE MODE", 1, RGB(90, 82, 96));
+    /* A star glint on the highlight. */
+    {
+        int gx = BEET_X - 13, gy = BEET_Y - 17;
+        for (int k = 1; k < 12; ++k) {
+            unsigned a = (unsigned)(250 - k * 21);
+            gfx_blend(gx + k, gy, C_TEXT, a); gfx_blend(gx - k, gy, C_TEXT, a);
+            gfx_blend(gx, gy + k, C_TEXT, a); gfx_blend(gx, gy - k, C_TEXT, a);
+        }
+        gfx_fill(gx - 1, gy - 1, 3, 3, RGB(255, 240, 250));
+    }
+    /* Loose crumbs under the beet. */
+    for (unsigned i = 0; i < 12; ++i) {
+        int cx = 78 + (int)(sp_hash((int)i, 3) * 84.0f), cy = BEET_Y + 60 + (int)(sp_hash((int)i, 9) * 8.0f);
+        gfx_fill(cx, cy, 2, 2, RGB(240, 170, 60)); gfx_fill(cx, cy, 1, 1, RGB(255, 230, 160));
+    }
+    int tw = gfx_title_width("BEETROOT", GFX_BOLD | GFX_ITALIC);
+    gfx_title(120 - tw / 2, 170, "BEETROOT", RGB(255, 140, 190), RGB(190, 20, 84), GFX_BOLD | GFX_ITALIC | GFX_SHADOW);
+    tw = gfx_title_width("TEMPURA", GFX_BOLD | GFX_ITALIC);
+    gfx_title(120 - tw / 2, 190, "TEMPURA", RGB(255, 236, 150), RGB(236, 120, 24), GFX_BOLD | GFX_ITALIC | GFX_SHADOW);
+    gfx_hline(60, 210, 120, RGB(90, 30, 70)); gfx_fill(118, 209, 4, 3, C_AMBER);
+    const char *tag = "GRANULAR CANVAS FOR FM-1";
+    gfx_label(120 - gfx_label_width(tag) / 2, 215, tag, RGB(200, 180, 200));
+    tag = "HOLD HOME FOR SAFE MODE  V" TEMPURA_VERSION;
+    gfx_label(120 - gfx_label_width(tag) / 2, 228, tag, RGB(100, 88, 104));
 }
 
 static unsigned safe;

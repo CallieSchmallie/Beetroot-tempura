@@ -53,11 +53,106 @@ uint16_t gfx_mix(uint16_t a, uint16_t b, unsigned t)
     unsigned r = (ra * (255U - t) + rb * t) / 255U, g = (ga * (255U - t) + gb * t) / 255U, bl = (ba * (255U - t) + bb * t) / 255U;
     return (uint16_t)((r << 11) | (g << 5) | bl);
 }
+void gfx_vgrad(int x, int y, int w, int h, uint16_t top, uint16_t bottom)
+{
+    int y0 = y < gfx_top ? gfx_top : y, y1 = y + h < gfx_top + GFX_BAND ? y + h : gfx_top + GFX_BAND;
+    for (int r = y0; r < y1; ++r) gfx_fill(x, r, w, 1, gfx_mix(top, bottom, h > 1 ? (unsigned)((r - y) * 255 / (h - 1)) : 0U));
+}
+void gfx_rfill(int x, int y, int w, int h, int r, uint16_t c)
+{
+    static const uint8_t inset[7][6] = {{0}, {1}, {2, 1}, {3, 1, 1}, {4, 2, 1, 1}, {5, 3, 2, 1, 1}, {6, 4, 3, 2, 1, 1}};
+    if (r > 6) r = 6;
+    for (int k = 0; k < h; ++k) {
+        int e = k < r ? inset[r][k] : h - 1 - k < r ? inset[r][h - 1 - k] : 0;
+        gfx_fill(x + e, y + k, w - 2 * e, 1, c);
+    }
+}
+void gfx_blend(int x, int y, uint16_t c, unsigned a)
+{
+    if (y < gfx_top || y >= gfx_top + GFX_BAND || x < 0 || x >= GFX_W) return;
+    uint16_t *p = gfx_px + (y - gfx_top) * GFX_W + x;
+    *p = gfx_mix(*p, c, a);
+}
+static const uint8_t *glyph(int ch)
+{
+    if (ch >= 'a' && ch <= 'z') ch -= 32;
+    if (ch < 32 || ch > 95) ch = '?';
+    return font[ch - 32];
+}
+/* Columns a glyph uses; digits keep full width so numbers don't jiggle. */
+static void glyph_span(int ch, const uint8_t *g, int *first, int *count)
+{
+    int a = 0, b = 4;
+    if (!(ch >= '0' && ch <= '9')) { while (a < 5 && !g[a]) ++a; while (b >= 0 && !g[b]) --b; }
+    if (a > b) { *first = 0; *count = 2; return; }      /* space */
+    *first = a; *count = b - a + 1;
+}
+static int src_px(const uint8_t *g, int c, int r) { return c >= 0 && c < 5 && r >= 0 && r < 7 && (g[c] >> r) & 1U; }
+int gfx_label_width(const char *s)
+{
+    int w = 0;
+    for (; *s; ++s) { int f, n; glyph_span((unsigned char)*s, glyph((unsigned char)*s), &f, &n); w += n + 1; }
+    return w ? w - 1 : 0;
+}
+int gfx_label(int x, int y, const char *s, uint16_t c)
+{
+    if (y + 8 <= gfx_top || y >= gfx_top + GFX_BAND) return x + gfx_label_width(s);
+    for (; *s; ++s) {
+        const uint8_t *g = glyph((unsigned char)*s);
+        int f, n; glyph_span((unsigned char)*s, g, &f, &n);
+        for (int col = 0; col < n; ++col)
+            for (int row = 0; row < 7; ++row) if (src_px(g, f + col, row)) gfx_fill(x + col, y + row, 1, 1, c);
+        x += n + 1;
+    }
+    return x - 1;
+}
+int gfx_title_width(const char *s, unsigned style)
+{
+    int w = 0;
+    for (; *s; ++s) {
+        int f = 0, n = 5;
+        if (!(style & GFX_MONO)) glyph_span((unsigned char)*s, glyph((unsigned char)*s), &f, &n);
+        w += 2 * n + 2 + (style & GFX_BOLD ? 1 : 0);
+    }
+    return w ? w - 2 + (style & GFX_ITALIC ? 3 : 0) : 0;
+}
+/* Doubles a glyph with EPX smoothing: diagonal steps become slopes and
+ * square corners round off, so large text reads as a drawn letterform. */
+int gfx_title(int x, int y, const char *s, uint16_t top, uint16_t bottom, unsigned style)
+{
+    if (y + 16 <= gfx_top || y >= gfx_top + GFX_BAND) return x + gfx_title_width(s, style);
+    for (; *s; ++s) {
+        const uint8_t *g = glyph((unsigned char)*s);
+        int f = 0, n = 5;
+        if (!(style & GFX_MONO)) glyph_span((unsigned char)*s, g, &f, &n);
+        for (int pass = style & GFX_SHADOW ? 0 : 1; pass < 2; ++pass)
+            for (int r = 0; r < 14; ++r) {
+                int sr = r >> 1, dy = r & 1, ox = x + (style & GFX_ITALIC ? (13 - r) / 4 : 0);
+                if (y + r + (pass ? 0 : 2) < gfx_top || y + r >= gfx_top + GFX_BAND) continue;
+                uint16_t c = pass ? gfx_mix(top, bottom, (unsigned)r * 255U / 13U) : 0;
+                for (int k = 0; k < 2 * n; ++k) {
+                    int sc = f + (k >> 1), dx = k & 1;
+                    int P = src_px(g, sc, sr), A = src_px(g, sc, sr - 1), B = src_px(g, sc + 1, sr);
+                    int C = src_px(g, sc - 1, sr), D = src_px(g, sc, sr + 1), on = P;
+                    if (!dy && !dx && C == A && C != D && A != B) on = A;
+                    else if (!dy && dx && A == B && A != C && B != D) on = B;
+                    else if (dy && !dx && D == C && D != B && C != A) on = C;
+                    else if (dy && dx && B == D && B != A && D != C) on = D;
+                    if (!on) continue;
+                    int px = ox + k + (pass ? 0 : 1), py = y + r + (pass ? 0 : 2);
+                    gfx_fill(px, py, style & GFX_BOLD ? 2 : 1, 1, c);
+                }
+            }
+        x += 2 * n + 2 + (style & GFX_BOLD ? 1 : 0);
+    }
+    return x;
+}
 int gfx_text_width(const char *s, int scale) { return (int)strlen(s) * 6 * scale; }
 int gfx_text(int x, int y, const char *s, int scale, uint16_t c)
 {
     if (y + 8 * scale <= gfx_top || y >= gfx_top + GFX_BAND) return x + gfx_text_width(s, scale);
-    for (; *s; ++s, x += 6 * scale) {
+    if (scale == 2) { char one[2] = {0, 0}; for (; *s; ++s, x += 12) { one[0] = *s; gfx_title(x, y, one, c, c, GFX_MONO); } return x; }
+    for (; *s; ++s, x += 6) {
         int ch = (unsigned char)*s;
         if (ch >= 'a' && ch <= 'z') ch -= 32;
         if (ch < 32 || ch > 95) ch = '?';
@@ -65,11 +160,9 @@ int gfx_text(int x, int y, const char *s, int scale, uint16_t c)
         for (int col = 0; col < 5; ++col)
             for (int row = 0; row < 7; ++row)
                 if (g[col] & (1U << row)) {
-                    if (scale == 1) {
-                        int py = y + row;
-                        if (py >= gfx_top && py < gfx_top + GFX_BAND && x + col >= 0 && x + col < GFX_W)
-                            gfx_px[(py - gfx_top) * GFX_W + x + col] = c;
-                    } else gfx_fill(x + col * scale, y + row * scale, scale, scale, c);
+                    int py = y + row;
+                    if (py >= gfx_top && py < gfx_top + GFX_BAND && x + col >= 0 && x + col < GFX_W)
+                        gfx_px[(py - gfx_top) * GFX_W + x + col] = c;
                 }
     }
     return x;

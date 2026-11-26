@@ -181,6 +181,11 @@ hard. GLO → SYSTEM shows CPU, the grain limit and an overload count.
 ## Changes in 1.3 (test build)
 
 - Each section shows its own screen (see Section screens).
+- New look: the splash is a lit, tempura-battered beetroot with red-veined
+  leaves, steam and light rays, drawn in code. Large text uses a smoothed,
+  proportional display font (bold, italic, gradient, shadow) generated from
+  the 5x7 glyphs, labels use a proportional small font, and the header,
+  knob panel and sliders get gradients, rounded shapes and section icons.
 - Arpeggiator. The old "hold ARP to play the cursor cell" is gone; CELLS
   keyboard mode plays cells.
 - Canvases saved by older versions still load: their CRC covers their own

@@ -21,6 +21,18 @@ void gfx_rect(int x, int y, int w, int h, uint16_t c);
 int gfx_text(int x, int y, const char *s, int scale, uint16_t c);
 int gfx_text_width(const char *s, int scale);
 uint16_t gfx_mix(uint16_t a, uint16_t b, unsigned t255); /* t=0 -> a, 255 -> b */
+/* Vertical gradient, rounded fill (r <= 6), one blended pixel. */
+void gfx_vgrad(int x, int y, int w, int h, uint16_t top, uint16_t bottom);
+void gfx_rfill(int x, int y, int w, int h, int r, uint16_t c);
+void gfx_blend(int x, int y, uint16_t c, unsigned a255);
+/* Display font: the 5x7 glyphs doubled with edge smoothing (14 px tall),
+ * spaced by their own width, with a top-to-bottom colour gradient. */
+enum { GFX_BOLD = 1, GFX_ITALIC = 2, GFX_SHADOW = 4, GFX_MONO = 8 };
+int gfx_title(int x, int y, const char *s, uint16_t top, uint16_t bottom, unsigned style);
+int gfx_title_width(const char *s, unsigned style);
+/* Small proportional text (7 px tall). */
+int gfx_label(int x, int y, const char *s, uint16_t c);
+int gfx_label_width(const char *s);
 
 /* Frame pump: call every control poll. draw(band) composes one band. */
 typedef void (*gfx_draw_fn)(void);

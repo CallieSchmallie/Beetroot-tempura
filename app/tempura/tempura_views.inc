@@ -737,7 +737,7 @@ static void view_arp(void)
 static void draw_view(unsigned view)
 {
     if (gfx_top + GFX_BAND <= GY - 2 || gfx_top >= PANEL_Y - 2) return;
-    gfx_fill(0, GY - 2, GFX_W, PANEL_Y - GY, C_BG);
+    gfx_vgrad(0, GY - 2, GFX_W, PANEL_Y - GY, RGB(6, 3, 9), RGB(22, 9, 24));
     switch (view) {
     case V_GRAIN: view_grain(); break;
     case V_POSITION: view_position(); break;

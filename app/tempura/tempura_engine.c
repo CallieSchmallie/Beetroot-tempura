@@ -1089,6 +1089,8 @@ unsigned tempura_live_head(void) { if (!live_len) return 0; return (unsigned)((u
 /* =========================================================== cooking */
 /* Control-task code from here to the end is optimised for size. */
 #pragma clang attribute push (__attribute__((minsize)), apply_to = function)
+static __attribute__((noinline)) float c_exp2(float x) { return tp_exp2(x); }
+static float c_exp(float x) { return c_exp2(x * 1.442695041f); }
 static float norm(int v) { return (float)v * (1.0f / 127.0f); }
 void tempura_engine_cook(const struct tp_canvas *c)
 {
@@ -1098,8 +1100,8 @@ void tempura_engine_cook(const struct tp_canvas *c)
     for (unsigned e = 0; e < TP_EMITTERS; ++e) {
         const int16_t *p = c->ep[e];
         struct tp_cooked_emitter *o = &k.e[e];
-        o->rate_hz = 0.5f * tp_exp2((float)p[EP_RATE] * (8.6f / 127.0f));
-        o->size_s = 0.004f * tp_exp2((float)p[EP_SIZE] * (9.0f / 127.0f));
+        o->rate_hz = 0.5f * c_exp2((float)p[EP_RATE] * (8.6f / 127.0f));
+        o->size_s = 0.004f * c_exp2((float)p[EP_SIZE] * (9.0f / 127.0f));
         o->shape = (uint8_t)p[EP_SHAPE];
         o->reverse_p = (float)p[EP_REVERSE] * 0.01f;
         o->pos_offset = (float)p[EP_POS] * (1.0f / 64.0f);
@@ -1116,21 +1118,21 @@ void tempura_engine_cook(const struct tp_canvas *c)
         o->velo = norm(p[EP_VELO]);
         o->mode = (uint8_t)p[EP_MODE];
         o->align = (uint8_t)p[EP_ALIGN_X];
-        float glide = 0.002f * tp_exp2((float)p[EP_GLIDE] * (10.0f / 127.0f));
-        o->glide_coef = p[EP_GLIDE] ? tp_exp(-4.6f * block / (glide * 44100.0f)) : 0.0f;
-        float attack = 0.001f * tp_exp2((float)p[EP_ATTACK] * (13.0f / 127.0f));
+        float glide = 0.002f * c_exp2((float)p[EP_GLIDE] * (10.0f / 127.0f));
+        o->glide_coef = p[EP_GLIDE] ? c_exp(-4.6f * block / (glide * 44100.0f)) : 0.0f;
+        float attack = 0.001f * c_exp2((float)p[EP_ATTACK] * (13.0f / 127.0f));
         o->attack_inc = 1.0f / (attack * 44100.0f);
-        float decay = 0.005f * tp_exp2((float)p[EP_DECAY] * (11.0f / 127.0f));
-        float release = 0.005f * tp_exp2((float)p[EP_RELEASE] * (11.0f / 127.0f));
-        o->decay_coef = tp_exp(-6.9f * block / (decay * 44100.0f));
-        o->release_coef = tp_exp(-6.9f * block / (release * 44100.0f));
+        float decay = 0.005f * c_exp2((float)p[EP_DECAY] * (11.0f / 127.0f));
+        float release = 0.005f * c_exp2((float)p[EP_RELEASE] * (11.0f / 127.0f));
+        o->decay_coef = c_exp(-6.9f * block / (decay * 44100.0f));
+        o->release_coef = c_exp(-6.9f * block / (release * 44100.0f));
         o->sustain = norm(p[EP_SUSTAIN]);
         o->filter = (uint8_t)p[EP_FILTER];
         o->cutoff_oct = norm(p[EP_CUTOFF]) * 9.8f;
         o->res_q = 0.5f + norm(p[EP_RES]) * norm(p[EP_RES]) * 12.0f;
         o->env_filter_oct = (float)p[EP_ENV_FILTER] * (5.0f / 64.0f);
         o->lfo_shape = (uint8_t)p[EP_LFO_SHAPE];
-        o->lfo_rate = 0.02f * tp_exp2((float)p[EP_LFO_RATE] * (10.0f / 127.0f));
+        o->lfo_rate = 0.02f * c_exp2((float)p[EP_LFO_RATE] * (10.0f / 127.0f));
         o->lfo_depth = norm(p[EP_LFO_DEPTH]);
         o->lfo_dest = (uint8_t)p[EP_LFO_DEST];
         o->send_mod = norm(p[EP_SEND_MOD]);
@@ -1155,7 +1157,7 @@ void tempura_engine_cook(const struct tp_canvas *c)
     struct tp_cooked_fx *f = &k.fx;
     const int16_t *g = c->g;
     f->mod_type = (uint8_t)g[G_MOD_TYPE];
-    f->mod_rate = 0.05f * tp_exp2((float)g[G_MOD_RATE] * (8.0f / 127.0f));
+    f->mod_rate = 0.05f * c_exp2((float)g[G_MOD_RATE] * (8.0f / 127.0f));
     f->mod_depth = norm(g[G_MOD_DEPTH]);
     f->mod_return = norm(g[G_MOD_RETURN]);
     f->mod_feedback = norm(g[G_MOD_FEEDBACK]) * 0.9f;
@@ -1163,9 +1165,9 @@ void tempura_engine_cook(const struct tp_canvas *c)
     unsigned tempo = tempura_midi_clock_bpm();
     float beats = 60.0f / (float)(tempo ? tempo : (unsigned)g[G_BPM]);
     static const float division[9] = {0.0f, 0.25f, 1.0f / 3.0f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 4.0f};
-    f->dly_seconds = sync && sync < 9 ? beats * division[sync] : 0.02f * tp_exp2((float)g[G_DLY_TIME] * (5.2f / 127.0f)); /* 20 ms .. 0.74 s */
+    f->dly_seconds = sync && sync < 9 ? beats * division[sync] : 0.02f * c_exp2((float)g[G_DLY_TIME] * (5.2f / 127.0f)); /* 20 ms .. 0.74 s */
     f->dly_feedback = norm(g[G_DLY_FEEDBACK]) * 0.97f;
-    f->dly_tone = 400.0f * tp_exp2(norm(g[G_DLY_TONE]) * 5.3f);
+    f->dly_tone = 400.0f * c_exp2(norm(g[G_DLY_TONE]) * 5.3f);
     f->dly_return = norm(g[G_DLY_RETURN]);
     f->ping = (uint8_t)g[G_DLY_PING];
     f->rev_feedback = 0.70f + norm(g[G_REV_SIZE]) * 0.28f;
