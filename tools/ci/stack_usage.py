@@ -2,7 +2,7 @@
 """Audio-interrupt stack depth, from the compiler's own frame sizes.
 
 Recompiles the audio sources with the exact device flags from
-compile_commands.json plus -fstack-usage (without LTO, which only changes
+compile_commands.json plus -Wframe-larger-than=0 (without LTO, which only changes
 cross-file inlining), then adds up the deepest call chain the audio
 interrupt can take through Beetroot Tempura. Run it for two builds to
 compare a new version against one proven on hardware.
@@ -27,16 +27,20 @@ for c in commands:
         if a.startswith('-flto') or a == '-MMD': continue
         args.append(a)
     obj = os.path.join(out, os.path.basename(c['file']) + '.o')
-    r = subprocess.run(args + ['-fno-lto', '-fstack-usage', '-o', obj], cwd=c['directory'], capture_output=True, text=True)
+    # The JieLi clang (4.0.1) has no -fstack-usage; -Wframe-larger-than=0
+    # makes the backend report every function's frame size instead.
+    args = [a for a in args if not a.startswith('-Werror')]
+    r = subprocess.run(args + ['-fno-lto', '-Wframe-larger-than=0', '-o', obj], cwd=c['directory'], capture_output=True, text=True)
     if r.returncode:
-        print(f'::warning::{label}: stack-usage compile of {c["file"]} failed: {r.stderr[:400]}')
+        print(f'::warning::{label}: frame-size compile of {c["file"]} failed: {r.stderr[:400]}')
         continue
-    su = obj[:-2] + '.su'
-    if not os.path.exists(su):
-        su = os.path.splitext(obj)[0] + '.su'
-    for line in open(su, encoding='utf-8', errors='replace'):
-        m = re.match(r'.*:(\w+)\s+(\d+)\s+(\S+)', line.strip())
-        if m: frames[m.group(1)] = (int(m.group(2)), m.group(3))
+    found = 0
+    for m in re.finditer(r"stack frame size of (\d+) bytes in function '([^']+)'", r.stderr):
+        frames[m.group(2)] = (int(m.group(1)), 'static'); found += 1
+    for m in re.finditer(r"stack frame size \((\d+)\) exceeds limit \(\d+\) in (?:function )?'([^']+)'", r.stderr):
+        frames[m.group(2)] = (int(m.group(1)), 'static'); found += 1
+    if not found:
+        print(f'::warning::{label}: no frame sizes reported for {c["file"]}: {r.stderr[:300]}')
 
 # The interrupt's call tree through Beetroot Tempura (callee lists; a missing
 # function was inlined into its caller, so it adds nothing on its own).
@@ -44,7 +48,7 @@ tree = {
     'tempura_render': ['process_events', 'arp_block', 'update_voices', 'spawn', 'render_grain', 'finish_emitters', 'tp_fx_render', 'tp_fx_clear'],
     'process_events': ['arp_key', 'note_on', 'note_off', 'tp_fx_clear'],
     'arp_block': ['arp_clear', 'arp_release', 'tp_arp_sequence', 'note_on'],
-    'arp_clear': ['arp_release'], 'arp_release': ['note_off'],
+    'arp_clear': ['note_off'], 'arp_release': ['note_off'],
     'tp_arp_sequence': ['arp_sort'],
     'spawn': ['reader_start', 'cache_try'], 'reader_start': ['cache_try'],
     'render_grain': ['cache_try', 'reader_next'], 'reader_next': ['cache_try'],

@@ -427,27 +427,30 @@ static struct tp_arp arps[TP_EMITTERS];
 static uint8_t arp_was_on;
 static uint32_t arp_rng = 0x2545f491U;
 
-static TP_AUDIO __attribute__((minsize, noinline)) void arp_sort(uint8_t *a, unsigned n)
+static TP_AUDIO __attribute__((always_inline)) inline void arp_sort(uint8_t *a, unsigned n)
 {
     for (unsigned i = 1; i < n; ++i) { uint8_t x = a[i]; unsigned j = i; while (j && a[j - 1] > x) { a[j] = a[j - 1]; --j; } a[j] = x; }
 }
 __attribute__((minsize)) TP_AUDIO unsigned tp_arp_sequence(const uint8_t *held, unsigned n, unsigned mode, unsigned octaves, uint8_t *out, unsigned max)
 {
-    if (!n) return 0;
+    /* Built in place in out[] (no local copy): this runs in the audio interrupt. */
+    if (!n || !max) return 0;
     if (n > ARP_HELD) n = ARP_HELD;
+    if (n > max) n = max;
     if (octaves < 1) octaves = 1;
-    uint8_t base[ARP_HELD];
-    for (unsigned i = 0; i < n; ++i) base[i] = held[i];
-    if (mode != ARP_ORDER) arp_sort(base, n);
+    for (unsigned i = 0; i < n; ++i) out[i] = held[i];
+    if (mode != ARP_ORDER) arp_sort(out, n);
     unsigned len = 0;
     if (mode == ARP_CHORD) {           /* one step per octave; the lowest note stands for the chord */
+        uint8_t low = out[0];
         for (unsigned o = 0; o < octaves && len < max; ++o)
-            if (base[0] + 12U * o <= 127U) out[len++] = (uint8_t)(base[0] + 12U * o);
+            if (low + 12U * o <= 127U) out[len++] = (uint8_t)(low + 12U * o);
         return len;
     }
-    for (unsigned o = 0; o < octaves; ++o)
+    len = n;
+    for (unsigned o = 1; o < octaves; ++o)
         for (unsigned i = 0; i < n && len < max; ++i)
-            if (base[i] + 12U * o <= 127U) out[len++] = (uint8_t)(base[i] + 12U * o);
+            if (out[i] + 12U * o <= 127U) out[len++] = (uint8_t)(out[i] + 12U * o);
     if (mode == ARP_DOWN) {
         for (unsigned i = 0; i < len / 2U; ++i) { uint8_t t = out[i]; out[i] = out[len - 1U - i]; out[len - 1U - i] = t; }
     } else if (mode == ARP_UPDOWN && len > 2) {
@@ -457,7 +460,7 @@ __attribute__((minsize)) TP_AUDIO unsigned tp_arp_sequence(const uint8_t *held, 
     return len;
 }
 
-__attribute__((minsize, noinline)) static TP_AUDIO void arp_release(struct tp_arp *a, unsigned emitter)
+static TP_AUDIO __attribute__((always_inline)) inline void arp_release(struct tp_arp *a, unsigned emitter)
 {
     for (unsigned i = 0; i < a->nsounding; ++i) {
         struct tp_event off = {EV_OFF, (uint8_t)emitter, a->sounding[i], 0, 255, ARP_TAG, 0};
@@ -465,9 +468,14 @@ __attribute__((minsize, noinline)) static TP_AUDIO void arp_release(struct tp_ar
     }
     a->nsounding = 0;
 }
-__attribute__((minsize, noinline)) static TP_AUDIO void arp_clear(void)
+static TP_AUDIO __attribute__((always_inline)) inline void arp_clear(void)
 {
-    for (unsigned e = 0; e < TP_EMITTERS; ++e) { arp_release(&arps[e], e); arps[e].count = arps[e].phys = 0; arps[e].running = 0; }
+    struct tp_event off = {EV_OFF, 0, 0, 0, 255, ARP_TAG, 0};
+    for (unsigned e = 0; e < TP_EMITTERS; ++e) {
+        off.emitter = (uint8_t)e;
+        for (unsigned i = 0; i < arps[e].nsounding; ++i) { off.note = arps[e].sounding[i]; note_off(&off); }
+        arps[e].nsounding = 0; arps[e].count = arps[e].phys = 0; arps[e].running = 0;
+    }
 }
 __attribute__((minsize, noinline)) static TP_AUDIO void arp_key(const struct tp_event *e)
 {
@@ -534,7 +542,7 @@ __attribute__((minsize, noinline)) static TP_AUDIO void arp_block(float block_s,
         unsigned accent = (a->step % (f->arp_steps_per_beat ? f->arp_steps_per_beat : 4U)) == 0;
         ++a->step;
         unsigned count = 1;
-        uint8_t notes[ARP_HELD];
+        static uint8_t notes[ARP_HELD];   /* static: keeps the interrupt stack shallow */
         notes[0] = seq[idx];
         if (f->arp_mode == ARP_CHORD) {     /* every held note, shifted to this step's octave */
             unsigned shift = (unsigned)(seq[idx] - seq[0]);
@@ -706,7 +714,7 @@ static TP_AUDIO struct tp_grain *grain_slot(void)
 }
 
 /* Runs per grain, voice or event, not per sample: optimised for size. */
-__attribute__((minsize, noinline)) static TP_AUDIO void spawn(struct tp_voice *v, unsigned vi, unsigned delay)
+static TP_AUDIO void spawn(struct tp_voice *v, unsigned vi, unsigned delay)
 {
     if (decodes_block >= SPAWN_DECODE_LIMIT) { ++stat_shed; return; }
     unsigned e = v->emitter;
