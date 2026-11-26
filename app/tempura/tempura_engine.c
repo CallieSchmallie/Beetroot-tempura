@@ -122,17 +122,19 @@ TP_INLINE void tp_zero(void *p, unsigned bytes)
 /* ================================================================ init */
 /* Control-task code below (until the slots section) is optimised for size. */
 #pragma clang attribute push (__attribute__((minsize)), apply_to = function)
+static __attribute__((noinline)) float i_exp(float x) { return tp_exp(x); }
+static __attribute__((noinline)) float i_cos1(float x) { return tp_cos1(x); }
 static void build_windows(void)
 {
     for (unsigned i = 0; i <= 256; ++i) {
         float x = (float)i / 256.0f;
-        float hann = 0.5f - 0.5f * tp_cos1(x);
+        float hann = 0.5f - 0.5f * i_cos1(x);
         float tri = x < 0.5f ? 2.0f * x : 2.0f - 2.0f * x;
-        float tukey = x < 0.2f ? 0.5f - 0.5f * tp_cos1(x * 2.5f) : x > 0.8f ? 0.5f - 0.5f * tp_cos1((1.0f - x) * 2.5f) : 1.0f;
-        float perc = (x < 0.02f ? x * 50.0f : tp_exp(-(x - 0.02f) * 5.0f)) * (x > 0.9f ? (1.0f - x) * 10.0f : 1.0f);
-        float swell = (x > 0.98f ? (1.0f - x) * 50.0f : tp_exp(-(0.98f - x) * 5.0f)) * (x < 0.1f ? x * 10.0f : 1.0f);
+        float tukey = x < 0.2f ? 0.5f - 0.5f * i_cos1(x * 2.5f) : x > 0.8f ? 0.5f - 0.5f * i_cos1((1.0f - x) * 2.5f) : 1.0f;
+        float perc = (x < 0.02f ? x * 50.0f : i_exp(-(x - 0.02f) * 5.0f)) * (x > 0.9f ? (1.0f - x) * 10.0f : 1.0f);
+        float swell = (x > 0.98f ? (1.0f - x) * 50.0f : i_exp(-(0.98f - x) * 5.0f)) * (x < 0.1f ? x * 10.0f : 1.0f);
         float d = (x - 0.5f) * 5.0f;
-        float gauss = tp_exp(-d * d * 0.5f) * (x < 0.05f ? x * 20.0f : x > 0.95f ? (1.0f - x) * 20.0f : 1.0f);
+        float gauss = i_exp(-d * d * 0.5f) * (x < 0.05f ? x * 20.0f : x > 0.95f ? (1.0f - x) * 20.0f : 1.0f);
         window_table[0][i] = hann;
         window_table[1][i] = tri;
         window_table[2][i] = tukey;
@@ -339,12 +341,12 @@ void tempura_set_sustain(unsigned emitter, unsigned on)
 { struct tp_event e = {EV_SUST, (uint8_t)emitter, 0, (uint8_t)(on != 0), 0, 0, 0}; (void)push_event(&e); }
 void tempura_set_bpm_q8(uint32_t q8) { bpm = (float)q8 * (1.0f / 256.0f); }
 
-static TP_AUDIO void voice_release(struct tp_voice *v)
+__attribute__((minsize, noinline)) static TP_AUDIO void voice_release(struct tp_voice *v)
 {
     v->stage = 2;
     v->held = 0;
 }
-static TP_AUDIO void note_on(const struct tp_event *e)
+__attribute__((minsize, noinline)) static TP_AUDIO void note_on(const struct tp_event *e)
 {
     const struct tp_cooked_emitter *ce = &tp_cook.e[e->emitter];
     float vel = (float)e->value * (1.0f / 127.0f);
@@ -391,7 +393,7 @@ static TP_AUDIO void note_on(const struct tp_event *e)
     v->accum = 0.999f;
     ++held_keys[e->emitter];
 }
-static TP_AUDIO void note_off(const struct tp_event *e)
+__attribute__((minsize, noinline)) static TP_AUDIO void note_off(const struct tp_event *e)
 {
     for (unsigned i = 0; i < TP_VOICES; ++i) {
         struct tp_voice *v = &voices[i];
@@ -453,7 +455,7 @@ __attribute__((minsize)) TP_AUDIO unsigned tp_arp_sequence(const uint8_t *held, 
     return len;
 }
 
-__attribute__((minsize)) static TP_AUDIO void arp_release(struct tp_arp *a, unsigned emitter)
+__attribute__((minsize, noinline)) static TP_AUDIO void arp_release(struct tp_arp *a, unsigned emitter)
 {
     for (unsigned i = 0; i < a->nsounding; ++i) {
         struct tp_event off = {EV_OFF, (uint8_t)emitter, a->sounding[i], 0, 255, ARP_TAG, 0};
@@ -461,11 +463,11 @@ __attribute__((minsize)) static TP_AUDIO void arp_release(struct tp_arp *a, unsi
     }
     a->nsounding = 0;
 }
-__attribute__((minsize)) static TP_AUDIO void arp_clear(void)
+__attribute__((minsize, noinline)) static TP_AUDIO void arp_clear(void)
 {
     for (unsigned e = 0; e < TP_EMITTERS; ++e) { arp_release(&arps[e], e); arps[e].count = arps[e].phys = 0; arps[e].running = 0; }
 }
-__attribute__((minsize)) static TP_AUDIO void arp_key(const struct tp_event *e)
+__attribute__((minsize, noinline)) static TP_AUDIO void arp_key(const struct tp_event *e)
 {
     struct tp_arp *a = &arps[e->emitter];
     const struct tp_cooked_fx *f = &tp_cook.fx;
@@ -491,7 +493,7 @@ __attribute__((minsize)) static TP_AUDIO void arp_key(const struct tp_event *e)
         break;
     }
 }
-__attribute__((minsize)) static TP_AUDIO void arp_block(float block_s, float bpm_now)
+__attribute__((minsize, noinline)) static TP_AUDIO void arp_block(float block_s, float bpm_now)
 {
     const struct tp_cooked_fx *f = &tp_cook.fx;
     if (!f->arp_on) {
@@ -564,7 +566,7 @@ __attribute__((minsize)) void tempura_arp_view(unsigned emitter, struct tp_arp_v
     v->playing = a->nsounding ? a->playing_pos : 255;
 }
 
-static TP_AUDIO void process_events(void)
+__attribute__((minsize, noinline)) static TP_AUDIO void process_events(void)
 {
     while (ev_read != ev_write) {
         TP_BARRIER();
@@ -632,7 +634,9 @@ static TP_AUDIO int reader_start(struct tp_reader *r, unsigned col, float y01, f
     r->step = (uint32_t)(ratio * 65536.0f);
     return 0;
 }
-TP_INLINE float reader_next(struct tp_reader *r)
+/* One shared copy (not inlined twice): only reversed, scanning and blended
+ * grains come this way; plain forward grains take the fast path. */
+static TP_AUDIO __attribute__((noinline)) float reader_next(struct tp_reader *r)
 {
     float s0, s1;
     if (r->kind == 1) {
@@ -699,7 +703,8 @@ static TP_AUDIO struct tp_grain *grain_slot(void)
     return best;
 }
 
-static TP_AUDIO void spawn(struct tp_voice *v, unsigned vi, unsigned delay)
+/* Runs per grain, voice or event, not per sample: optimised for size. */
+__attribute__((minsize, noinline)) static TP_AUDIO void spawn(struct tp_voice *v, unsigned vi, unsigned delay)
 {
     if (decodes_block >= SPAWN_DECODE_LIMIT) { ++stat_shed; return; }
     unsigned e = v->emitter;
@@ -864,7 +869,7 @@ static TP_AUDIO float lfo_shape(unsigned e, unsigned shape, float phase, int wra
     return lfo_from[e] + (lfo_to[e] - lfo_from[e]) * s;
 }
 
-static TP_AUDIO void update_voices(void)
+__attribute__((minsize, noinline)) static TP_AUDIO void update_voices(void)
 {
     const float block_s = (float)FM1_BLOCK_FRAMES / 44100.0f;
     unsigned active = 0;
@@ -1056,7 +1061,7 @@ TP_AUDIO unsigned tempura_monitor_gain_q7(void)
     float m = tp_cook.fx.monitor;
     return (unsigned)(tp_clampf(m, 0.0f, 1.0f) * 128.0f);
 }
-TP_AUDIO void tempura_live_feed(const int16_t *bt, const int32_t *usb, unsigned frames)
+__attribute__((minsize)) TP_AUDIO void tempura_live_feed(const int16_t *bt, const int32_t *usb, unsigned frames)
 {
     if (!live) return;
     if (tp_cook.fx.freeze) return;

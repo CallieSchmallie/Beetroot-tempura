@@ -3,6 +3,9 @@
  * reverb. The delay and reverb buffers are borrowed after boot with a heap
  * reserve (see tempura_engine.c); an effect without its buffer passes nothing. */
 #include "tempura_internal.h"
+/* Optimised for size: about 3 KB smaller for ~5 % more effect time, which
+ * the FM-1's app area needs and the CPU budget absorbs. */
+#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
 #include <stdlib.h>
 #include <string.h>
 
@@ -209,3 +212,4 @@ TP_AUDIO void tp_fx_render(float *mod_l, float *mod_r, float *dly_l, float *dly_
     delay(dly_l, dly_r, out_l, out_r, frames);
     reverb(rev_l, rev_r, out_l, out_r, frames);
 }
+#pragma clang attribute pop
