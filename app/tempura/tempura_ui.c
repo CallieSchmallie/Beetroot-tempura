@@ -912,7 +912,9 @@ void tempura_ui_control(void)
 
     if (safe) { gfx_pump(safe_screen, 8); return; }
     if (!booted) {
-        gfx_pump(boot_splash, 8);
+        /* One band per pass: the lit splash is per-pixel maths, and the FM-1 is
+         * still starting Bluetooth and USB; keep every control pass short. */
+        gfx_pump(boot_splash, 1);
         if (c.buttons & BTN(B_HOME)) {
             /* Safe mode: no sound, no Tempura Bluetooth or canvas work. The
              * FM-1's own USB update path stays fully available for reflashing. */

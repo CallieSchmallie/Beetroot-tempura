@@ -135,6 +135,17 @@ __SAMPLES__
 __SEA5__
 </script>
 <script>
+/* Keep the screen on while writing: a phone that sleeps mid-update stops
+ * serving the FM-1, which then waits in update mode until Install is pressed again. */
+let wake = null;
+async function stayAwake(on) {
+  try {
+    if (on && 'wakeLock' in navigator && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); }
+    if (!on && wake) { await wake.release(); wake = null; }
+  } catch (e) { /* not supported or refused: the update still works with the screen kept on by hand */ }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && window.onbeforeunload) stayAwake(true); });
+
 (() => {
 'use strict';
 const $ = id => document.getElementById(id);
@@ -160,7 +171,7 @@ const EN = {
  '固件目录校验失败':'The firmware package directory is corrupt.',
  '固件身份无效':'The firmware package identity is invalid.',
  '固件配置无效':'The firmware build information is invalid.',
- '已发现 MIDI 端口，但无法匹配':'MIDI ports were found but none matched an FM-1. Leave only the FM-1 connected and try again.',
+ '已发现 MIDI 端口，但无法匹配':'MIDI ports were found but none matched a single FM-1. If two FM-1s are plugged in, unplug one. Leave only the FM-1 you want to update connected and try again.',
  '已找到 MIDI 端口，但设备未回复型号':'Found the FM-1 port but the device did not answer. Close other MIDI apps, power-cycle the FM-1, replug USB and try again.',
  '强制烧录尚未确认':'Tick the box to replace the other firmware first.',
  '打开 MIDI 端口超时':'Opening the MIDI port timed out. Close other MIDI apps or tabs and try again.',
@@ -356,14 +367,14 @@ $('sounds').addEventListener('click', async () => {
     lib = new W.Library(access);
     await lib.connect();
     await lib.extensions();
-    window.onbeforeunload = () => 'Sounds are being written to the FM-1.';
+    window.onbeforeunload = () => 'Sounds are being written to the FM-1.'; stayAwake(true);
     await lib.samplesWrite(bank, v => { const pct = Math.round(v * 100); $('bar5').style.width = pct + '%'; say('m5', (v < 0.6 ? 'Writing sounds · ' : 'Checking · ') + pct + '%'); });
     $('bar5').style.width = '100%';
     say('m5', 'Done. Tracks 1–8 now hold: ' + selects.map(s => s.value.toLowerCase()).join(', ') + '.', 'ok');
   } catch (err) {
     say('m5', err.name === 'SecurityError' || err.name === 'NotAllowedError' ? 'MIDI access was blocked. Allow MIDI devices (with system exclusive) for this page in the browser’s site settings.' : en(err.message), 'bad');
   } finally {
-    window.onbeforeunload = null;
+    window.onbeforeunload = null; stayAwake(false);
     if (lib) await lib.disconnect().catch(() => {});
     $('sounds').disabled = false;
   }
@@ -371,26 +382,27 @@ $('sounds').addEventListener('click', async () => {
 
 $('flash').addEventListener('click', async () => {
   $('flash').disabled = true; $('connect').disabled = true; $('files').disabled = true;
-  window.onbeforeunload = () => 'The FM-1 is being updated.';
+  window.onbeforeunload = () => 'The FM-1 is being updated.'; stayAwake(true);
   try {
     await updater.install({ force: $('force').checked });
     $('bar').style.width = '100%';
     say('m4', 'Done. Beetroot Tempura is installed and verified. The FM-1 restarts into the canvas.', 'ok');
   } catch (err) {
-    say('m4', en(err.message) + ' Checking what the FM-1 is doing now…', 'bad');
+    const why = en(err.message);
+    say('m4', why + ' Checking what the FM-1 is doing now…', 'bad');
     connected = null; $('connect').disabled = false;
     // Look once more and tell the person which recovery path applies.
     let seen = null;
     try { await updater.disconnect(); const d = await updater.discover(true); if (d) { seen = d.identity; await d.link.close(); } } catch (e) {}
     const ports = (updater.diagnostics && updater.diagnostics.inputs || []).join(', ') || 'none';
     if (seen && /^ota-/i.test(seen)) {
-      say('m4', 'The FM-1 is in update mode and waiting (it shows as ' + seen + '). Leave it plugged in, press Connect over USB, then Install: the update continues from here.', 'warn');
+      say('m4', why + ' The FM-1 is in update mode and waiting (it shows as ' + seen + '). Leave it plugged in, press Connect over USB, then Install: the update continues from here.', 'warn');
     } else if (seen) {
-      say('m4', 'The FM-1 restarted into its old firmware (' + seen + ') instead of update mode. If that is Beetroot Tempura 1.0, it is short on memory: turn off Bluetooth on any phone or computer paired with it, make sure this computer is not playing sound through the FM-1, then on the FM-1 open GLO → BLUETOOTH and turn K2 (BT AUDIO) left to OFF. Then press Connect and Install again straight away, without restarting it.', 'bad');
+      say('m4', why + ' Nothing was changed: the FM-1 is still running ' + seen + '. Press Connect over USB and try again. If it keeps returning to its old firmware, turn off Bluetooth on any phone or computer paired with it and make sure this computer is not playing sound through the FM-1, then try again straight away. (On Beetroot Tempura 1.0 also set GLO → BLUETOOTH, K2 BT AUDIO, to OFF.)', 'bad');
     } else {
-      say('m4', 'The FM-1 is not visible over USB right now (MIDI ports seen: ' + ports + '). Leave it plugged in for a minute, then press Connect. If its screen stays dark and nothing appears, unplug it, plug it back in and press Connect with "replace other firmware" ticked.', 'bad');
+      say('m4', why + ' The FM-1 is not visible over USB right now (MIDI ports seen: ' + ports + '). Leave it plugged in for a minute, then press Connect. If its screen stays dark and nothing appears, unplug it, plug it back in and press Connect with "replace other firmware" ticked.', 'bad');
     }
-  } finally { window.onbeforeunload = null; $('files').disabled = false; }
+  } finally { window.onbeforeunload = null; stayAwake(false); $('files').disabled = false; $('connect').disabled = false; }
 });
 })();
 </script>

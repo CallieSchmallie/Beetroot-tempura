@@ -157,21 +157,12 @@ jobs:
           $nm = "$env:FM1_PI32_TOOLCHAIN\bin\llvm-nm.exe"
           if (Test-Path build/dx7/sdk.elf) { & $nm --print-size --size-sort --radix=d build/dx7/sdk.elf | Select-Object -Last 160 }
 
-      - name: Compare memory and audio stack frames
+      - name: Audio interrupt stack, 1.2 vs current
         continue-on-error: true
         shell: pwsh
         run: |
-          $nm = "$env:FM1_PI32_TOOLCHAIN\bin\llvm-nm.exe"
-          $od = "$env:FM1_PI32_TOOLCHAIN\bin\llvm-objdump.exe"
-          foreach ($b in @(@{n='1.2';e='stable/build/dx7/sdk.elf'}, @{n='current';e='build/dx7/sdk.elf'})) {
-            if (-not (Test-Path $b.e)) { Write-Host "::notice::$($b.n): no elf"; continue }
-            $syms = & $nm --print-size $b.e | Select-String '_MALLOC_SIZE|_HEAP_BEGIN|_HEAP_END|_stack|STACK|stack'
-            Write-Host "::notice::$($b.n) symbols: $(($syms | Out-String) -replace '\s+',' ')"
-            foreach ($f in @('fm1_audio_irq','tempura_render')) {
-              $d = & $od -d $b.e 2>&1 | Select-String -Pattern "<$f>:" -Context 0,12 | Select-Object -First 1
-              Write-Host "::notice::$($b.n) $f prologue: $(($d | Out-String) -replace '\s+',' ')"
-            }
-          }
+          python tools/ci/stack_usage.py stable/build/dx7 1.2
+          python tools/ci/stack_usage.py build/dx7 current
 
       - name: Make the flasher site
         shell: pwsh
