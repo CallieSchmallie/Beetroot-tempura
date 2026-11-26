@@ -234,7 +234,8 @@ unsigned tempura_slot_frames(unsigned slot) { return slot < TP_SLOTS ? slots[slo
 static TP_AUDIO int tp_sea5_decode(const uint8_t *c, int16_t *pcm);
 /* Returns the decoded chunk, or NULL when this block's decode budget is used
  * up (the caller then keeps what it has rather than dropping to silence). */
-static TP_AUDIO const int16_t *cache_try(unsigned slot, int32_t index)
+/* Out of line: called per grain and per 320-sample chunk, not per sample. */
+static TP_AUDIO __attribute__((noinline)) const int16_t *cache_try(unsigned slot, int32_t index)
 {
     const struct tp_slot *s = &slots[slot];
     if (!s->data || index < 0 || (uint32_t)index >= s->chunks) return silent_chunk;
@@ -608,7 +609,7 @@ __attribute__((minsize, noinline)) static TP_AUDIO void process_events(void)
 /* ============================================================== grains */
 TP_INLINE unsigned bit_count8(unsigned x) { x = x - ((x >> 1) & 0x55U); x = (x & 0x33U) + ((x >> 2) & 0x33U); return (x + (x >> 4)) & 0x0fU; }
 
-static TP_AUDIO int reader_start(struct tp_reader *r, unsigned col, float y01, float semis, int dir)
+static TP_AUDIO __attribute__((noinline)) int reader_start(struct tp_reader *r, unsigned col, float y01, float semis, int dir)
 {
     const struct tp_cooked_track *t = &tp_cook.t[col];
     float pos01 = t->start + y01 * (t->end - t->start);

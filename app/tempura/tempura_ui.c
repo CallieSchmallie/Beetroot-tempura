@@ -650,10 +650,8 @@ static void draw_ble(void)
             }
             if (!st.count) gfx_text(8, 92, "REC: SCAN FOR BLE MIDI DEVICES", 1, C_DIM);
         } else {
-            gfx_text(8, 92, "ON YOUR PHONE: OPEN A BLE MIDI", 1, C_DIM);
-            gfx_text(8, 104, "APP AND CONNECT TO THE FM-1.", 1, C_DIM);
-            gfx_text(8, 122, "PAIR BT AUDIO TO STREAM SOUND", 1, C_DIM);
-            gfx_text(8, 134, "INTO THE LIVE INPUT TRACK.", 1, C_DIM);
+            gfx_text(8, 92, "PHONE: CONNECT A BLE MIDI APP", 1, C_DIM);
+            gfx_text(8, 104, "BT AUDIO FEEDS THE LIVE INPUT", 1, C_DIM);
         }
         gfx_text(8, 164, "REC SCAN  PLAY CONNECT  ARP DROP", 1, C_DIM);
         return;
@@ -865,16 +863,6 @@ static void boot_splash(void)
             }
             row[x] = sp_rgb(r, g, b);
         }
-    }
-    /* A star glint on the highlight. */
-    {
-        int gx = BEET_X - 13, gy = BEET_Y - 17;
-        for (int k = 1; k < 12; ++k) {
-            unsigned a = (unsigned)(250 - k * 21);
-            gfx_blend(gx + k, gy, C_TEXT, a); gfx_blend(gx - k, gy, C_TEXT, a);
-            gfx_blend(gx, gy + k, C_TEXT, a); gfx_blend(gx, gy - k, C_TEXT, a);
-        }
-        gfx_fill(gx - 1, gy - 1, 3, 3, RGB(255, 240, 250));
     }
     int tw = gfx_title_width("BEETROOT", GFX_BOLD | GFX_ITALIC);
     gfx_title(120 - tw / 2, 170, "BEETROOT", RGB(255, 140, 190), RGB(190, 20, 84), GFX_BOLD | GFX_ITALIC | GFX_SHADOW);
