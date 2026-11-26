@@ -149,6 +149,14 @@ jobs:
         shell: pwsh
         run: python tools/ci/map_sizes.py build/dx7/sdk.map
 
+      - name: Largest symbols in the app image
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $nm = "$env:FM1_PI32_TOOLCHAIN\bin\llvm-nm.exe"
+          if (Test-Path build/dx7/sdk.elf) { & $nm --print-size --size-sort --radix=d build/dx7/sdk.elf | Select-Object -Last 160 }
+
       - name: Compare memory and audio stack frames
         continue-on-error: true
         shell: pwsh
