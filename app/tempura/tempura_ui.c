@@ -50,7 +50,7 @@ struct page { const char *title; uint8_t kind, view; int8_t p[4]; };
 enum { S_HOME, S_EDIT, S_ENV, S_LFO, S_FX, S_TRACK, S_SET, S_CANVAS, S_ARP, SECTIONS };
 enum {
     V_GRID, V_GRAIN, V_POSITION, V_PITCH, V_MIX, V_MODE, V_ENV, V_FILTER, V_LFO,
-    V_SENDS, V_MODFX, V_DELAY, V_DLYMOD, V_REVERB, V_TRACK, V_KEYS, V_MIDI, V_LIVE, V_ARP
+    V_SENDS, V_MODFX, V_DELAY, V_REVERB, V_TRACK, V_ARP
 };
 static const struct page home_pages[] = {
     {"PLAY", K_EMITTER, V_GRID, {EP_RATE, EP_SIZE, EP_SPRAY_Y, EP_SEMI}},
@@ -73,7 +73,7 @@ static const struct page fx_pages[] = {
     {"SENDS", K_EMITTER, V_SENDS, {EP_SEND_MOD, EP_SEND_DELAY, EP_SEND_REVERB, EP_DRY}},
     {"MODULATION", K_GLOBAL, V_MODFX, {G_MOD_TYPE, G_MOD_RATE, G_MOD_DEPTH, G_MOD_FEEDBACK}},
     {"DELAY", K_GLOBAL, V_DELAY, {G_DLY_TIME, G_DLY_FEEDBACK, G_DLY_TONE, G_DLY_SYNC}},
-    {"DELAY+MOD", K_GLOBAL, V_DLYMOD, {G_DLY_PING, G_BPM, G_DLY_RETURN, G_MOD_RETURN}},
+    {"DELAY+MOD", K_GLOBAL, V_DELAY, {G_DLY_PING, G_BPM, G_DLY_RETURN, G_MOD_RETURN}},
     {"REVERB", K_GLOBAL, V_REVERB, {G_REV_SIZE, G_REV_DAMP, G_REV_WIDTH, G_REV_RETURN}},
 };
 static const struct page track_pages[] = {
@@ -81,9 +81,9 @@ static const struct page track_pages[] = {
     {"TRACK", K_TRACK, V_TRACK, {TR_PAN, TR_REVERSE, TR_START, TR_END}},
 };
 static const struct page set_pages[] = {
-    {"KEYBOARD", K_GLOBAL, V_KEYS, {G_KEY_MODE, G_KEY_LAYER, G_ROOT, G_VOLUME}},
-    {"MIDI", K_GLOBAL, V_MIDI, {G_MIDI_MODE, G_CELL_CH, G_KEY_OUT, G_AT_DEST}},
-    {"LIVE INPUT", K_GLOBAL, V_LIVE, {G_LIVE_SRC, G_LIVE_GAIN, G_LIVE_MONITOR, G_LIVE_FREEZE}},
+    {"KEYBOARD", K_GLOBAL, V_GRID, {G_KEY_MODE, G_KEY_LAYER, G_ROOT, G_VOLUME}},
+    {"MIDI", K_GLOBAL, V_GRID, {G_MIDI_MODE, G_CELL_CH, G_KEY_OUT, G_AT_DEST}},
+    {"LIVE INPUT", K_GLOBAL, V_GRID, {G_LIVE_SRC, G_LIVE_GAIN, G_LIVE_MONITOR, G_LIVE_FREEZE}},
     {"BLUETOOTH", K_BLE, V_GRID, {-1, -1, -1, -1}},
     {"SYSTEM", K_SYSTEM, V_GRID, {-1, -1, -1, -1}},
 };
@@ -813,13 +813,6 @@ static void boot_splash(void)
             halo = halo > 0.0f && halo < 3.0f ? 0.35f * (1.0f - halo / 3.0f) * (1.0f - halo / 3.0f) : 0.0f;
             r += halo * 0.9f; g += halo * 0.12f; b += halo * 0.45f;
             if (sp_hash(x, y) > 0.9965f) { r += 0.5f; g += 0.35f; b += 0.3f; }   /* drifting grains */
-            float gx = dx * (1.0f / 46.0f), gy = (float)(y - (BEET_Y + 64)) * (1.0f / 6.0f), gs = gx * gx + gy * gy;
-            if (gs < 1.0f) { r *= 0.35f + 0.65f * gs; g *= 0.35f + 0.65f * gs; b *= 0.35f + 0.65f * gs; }   /* shadow on the ground */
-            if (y > 20 && y < BEET_Y - 24 && (x < 70 || x > 170)) {       /* steam off the hot tempura */
-                float side = x < 70 ? 52.0f : 188.0f, wob = side + 7.0f * sp_sin((float)y * 0.035f + side);
-                float dd = (float)x - wob; dd = dd < 0 ? -dd : dd;
-                if (dd < 2.5f) { float a = (1.0f - dd / 2.5f) * 0.18f * (float)(y - 20) / (float)(BEET_Y - 44); r += a; g += a; b += a * 1.1f; }
-            }
 
             float lr, lg, lb;
             if (sp_leaf(x, y, &lr, &lg, &lb)) { r = lr; g = lg; b = lb; }
@@ -882,11 +875,6 @@ static void boot_splash(void)
             gfx_blend(gx, gy + k, C_TEXT, a); gfx_blend(gx, gy - k, C_TEXT, a);
         }
         gfx_fill(gx - 1, gy - 1, 3, 3, RGB(255, 240, 250));
-    }
-    /* Loose crumbs under the beet. */
-    for (unsigned i = 0; i < 12; ++i) {
-        int cx = 78 + (int)(sp_hash((int)i, 3) * 84.0f), cy = BEET_Y + 60 + (int)(sp_hash((int)i, 9) * 8.0f);
-        gfx_fill(cx, cy, 2, 2, RGB(240, 170, 60)); gfx_fill(cx, cy, 1, 1, RGB(255, 230, 160));
     }
     int tw = gfx_title_width("BEETROOT", GFX_BOLD | GFX_ITALIC);
     gfx_title(120 - tw / 2, 170, "BEETROOT", RGB(255, 140, 190), RGB(190, 20, 84), GFX_BOLD | GFX_ITALIC | GFX_SHADOW);

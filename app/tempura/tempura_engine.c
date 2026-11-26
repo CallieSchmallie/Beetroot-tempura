@@ -151,6 +151,7 @@ void tempura_engine_init(void)
     memset(slots, 0, sizeof slots);
     ev_write = ev_read = 0;
     build_windows();
+    tp_sea_dqt_init();
     tp_fx_init();
 }
 

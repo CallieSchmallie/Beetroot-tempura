@@ -42,7 +42,7 @@ PAGE=E1, K1–K4=E2–E5, MAIN=E6, swap them at the top of `handle_encoders()` i
 
 ## Section screens
 
-HOME shows the canvas. Every other section replaces it with a picture of
+HOME and the GLO settings pages show the canvas. Every other section replaces it with a picture of
 what its knobs change, drawn from the engine's own values:
 
 | Page | Screen |
@@ -58,10 +58,9 @@ what its knobs change, drawn from the engine's own values:
 | FX · SENDS | The four send levels. |
 | FX · MODULATION | The chorus/flanger/vibrato delay sweep for left and right. |
 | FX · DELAY | The echo train (left above, right below in ping-pong). |
-| FX · DELAY+MOD | Tempo with a beat light, ping-pong, and both returns. |
+| FX · DELAY+MOD | The echo train, as on DELAY. |
 | FX · REVERB | The reverb tail with its decay time. |
 | SCL | The track's waveform with start and end, live grains, tune, level and pan. |
-| GLO · KEYBOARD / MIDI / LIVE INPUT | The keyboard as played, the MIDI routing, the live-input tape loop. |
 | ARP | The step pattern, with gate, swing, accents and the step now playing. |
 
 ## Arpeggiator

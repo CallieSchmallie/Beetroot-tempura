@@ -319,9 +319,6 @@ static void view_pitch(void)
         for (unsigned i = 0; i < 5; ++i) ctext(center + marks[i] * 4, bot + 6, names[i], 1, marks[i] ? C_DIM : C_TEXT);
     }
     if (band_hits(VY1 - 22, VY1)) {
-        char a[24], b[12];
-        vnum(b, ce->pitch_semis, 2, " SEMITONES"); strcpy(a, ce->pitch_semis >= 0 ? "+" : ""); strcat(a, b);
-        ctext(120, VY1 - 20, a, 1, C_TEXT);
         ctext(120, VY1 - 9, ce->quant >= 2 ? "SPRAY JUMPS OCTAVES" : ce->quant == 1 ? "SPRAY SNAPS TO SEMITONES" : "SPRAY IS SMOOTH", 1, C_DIM);
     }
 }
@@ -378,13 +375,6 @@ static void view_mode(void)
             gfx_fill(110 + gw, sy, 80 - gw, 8, ec);
             if (gw) { char b[16]; seconds_label(b, glide); gfx_text(110, sy + 24, "GLIDE ", 1, C_DIM); gfx_text(146, sy + 24, b, 1, C_TEXT); }
         }
-    }
-    if (band_hits(VY1 - 22, VY1)) {
-        char a[28];
-        strcpy(a, "PITCH QUANT "); strcat(a, tempura_list_name(tempura_emitter_info(EP_QUANT), ce->quant));
-        gfx_text(VX0, VY1 - 20, a, 1, C_DIM);
-        strcpy(a, "SPRAY X "); strcat(a, tempura_list_name(tempura_emitter_info(EP_ALIGN_X), ce->align));
-        gfx_text(VX0, VY1 - 9, a, 1, C_DIM);
     }
 }
 static void view_env(void)
@@ -518,29 +508,6 @@ static void view_delay(void)
         gfx_text(VX0, VY0, "ECHO EVERY", 1, C_DIM); gfx_text(VX0 + 66, VY0, b, 1, C_TEXT);
     }
 }
-static void view_dlymod(void)
-{
-    const struct tp_cooked_fx *fx = &tp_cook.fx;
-    unsigned clock = tempura_midi_clock_bpm();
-    unsigned bpm = clock ? clock : (unsigned)canvas.g[G_BPM];
-    unsigned beat = ((fm1_millis() % 240000U) * bpm / 60000U) & 3U;
-    if (band_hits(VY0, VY0 + 40)) {
-        char b[16]; vnum(b, (float)bpm, 0, clock ? " BPM MIDI" : " BPM");
-        gfx_text(VX0, VY0, b, 2, C_TEXT);
-        for (unsigned i = 0; i < 4; ++i) dot(150 + (int)i * 20, VY0 + 7, 5, i == beat ? (i ? C_AMBER : C_BEET) : C_GRIDL);
-    }
-    int ly = VY0 + 54;
-    if (band_hits(ly - 4, ly + 30)) {
-        gfx_rect(40, ly, 40, 22, C_TEAL); ctext(60, ly + 7, "L", 1, C_TEAL);
-        gfx_rect(160, ly, 40, 22, C_TEAL); ctext(180, ly + 7, "R", 1, C_TEAL);
-        if (fx->ping) { gfx_hline(82, ly + 6, 76, C_AMBER); gfx_hline(82, ly + 15, 76, C_AMBER); ctext(120, ly - 2, "PING PONG", 1, C_AMBER); }
-        else ctext(120, ly + 7, "STEREO", 1, C_DIM);
-    }
-    if (band_hits(VY1 - 50, VY1)) {
-        gfx_text(VX0, VY1 - 44, "DELAY RETURN", 1, C_DIM); hbar(VX0, VY1 - 34, VW, 6, fx->dly_return, C_TEAL);
-        gfx_text(VX0, VY1 - 22, "MOD RETURN", 1, C_DIM); hbar(VX0, VY1 - 12, VW, 6, fx->mod_return, C_AMBER);
-    }
-}
 static void view_reverb(void)
 {
     const struct tp_cooked_fx *fx = &tp_cook.fx;
@@ -587,113 +554,6 @@ static void view_track(void)
     if (band_hits(top - 2, top + 8)) {
         gfx_text(xs + 2, top, "S", 1, C_BEET); gfx_text(xe - 7, top, "E", 1, C_BEET);
         if (tr->reverse) ctext(120, top, "<< REVERSED", 1, C_AMBER);
-    }
-    int y = bot + 12;
-    if (band_hits(y - 2, VY1)) {
-        char a[24], b[12];
-        tempura_format(tempura_track_info(TR_TUNE), canvas.tr[cur_x][TR_TUNE], b); strcpy(a, "TUNE "); strcat(a, b);
-        tempura_format(tempura_track_info(TR_FINE), canvas.tr[cur_x][TR_FINE], b); strcat(a, " "); strcat(a, b);
-        gfx_text(VX0, y, a, 1, C_TEXT);
-        gfx_text(VX0, y + 16, "LEVEL", 1, C_DIM); hbar(VX0 + 36, y + 17, 70, 5, vnorm(canvas.tr[cur_x][TR_LEVEL]), C_TEXT);
-        gfx_text(124, y + 16, "PAN", 1, C_DIM);
-        gfx_hline(148, y + 19, 76, C_GRIDL); dot(148 + (int)((tr->pan + 1.0f) * 38.0f), y + 19, 2, C_TEXT);
-    }
-}
-static void view_keys(void)
-{
-    uint16_t ec = emitter_color[sel];
-    int top = VY0 + 20, bot = VY0 + 96, ww = VW / 16;
-    unsigned cells = canvas.g[G_KEY_MODE] == KEYS_CELLS;
-    if (band_hits(top, bot + 30)) {
-        for (unsigned w = 0; w < 16; ++w) {
-            unsigned k = white_keys[w];
-            uint16_t c = (prev_keys >> k) & 1U ? ec : RGB(170, 164, 176);
-            gfx_fill(VX0 + (int)w * ww, top, ww - 1, bot - top, c);
-            if (cells) {
-                char lab[3] = {(char)('1' + (w & 7U)), 0, 0};
-                ctext(VX0 + (int)w * ww + ww / 2, bot - 12, lab, 1, C_BG);
-            }
-        }
-        for (unsigned k = 0; k < 27; ++k) {
-            unsigned m = (5U + k) % 12U;     /* the lowest key is an F */
-            if (!(m == 1 || m == 3 || m == 6 || m == 8 || m == 10)) continue;
-            unsigned w = 0; while (w < 16 && white_keys[w] < k) ++w;
-            gfx_fill(VX0 + (int)w * ww - ww / 3, top, ww * 2 / 3, (bot - top) * 3 / 5, (prev_keys >> k) & 1U ? ec : RGB(30, 26, 34));
-        }
-    }
-    if (band_hits(VY0, VY0 + 16)) ctext(120, VY0, cells ? "KEYS PLAY CELLS" : "KEYS PLAY NOTES", 2, ec);
-    if (band_hits(bot + 6, VY1)) {
-        char a[28], b[12];
-        if (cells) { strcpy(a, "WHITE KEYS = TRACKS, 2 ROWS"); gfx_text(VX0, bot + 10, a, 1, C_DIM); }
-        else {
-            strcpy(a, "LOWEST KEY F"); vnum(b, (float)(3 + octave), 0, NULL); strcat(a, b);
-            gfx_text(VX0, bot + 10, a, 1, C_TEXT);
-            tempura_format(tempura_global_info(G_ROOT), canvas.g[G_ROOT], b); strcpy(a, "TRANSPOSE "); strcat(a, b);
-            gfx_text(VX0, bot + 24, a, 1, C_DIM);
-        }
-        gfx_text(VX0, bot + 40, canvas.g[G_KEY_LAYER] ? "PLAYS ALL PLACED EMITTERS" : "PLAYS THE SELECTED EMITTER", 1, C_DIM);
-    }
-}
-static void view_midi(void)
-{
-    if (!band_hits(VY0, VY1)) return;
-    unsigned active = tempura_midi_activity();
-    static const char *const ins[3] = {"USB", "DIN", "BLE"};
-    for (unsigned i = 0; i < 3; ++i) {
-        int y = VY0 + 14 + (int)i * 30;
-        gfx_rect(VX0, y, 40, 20, C_DIM); ctext(VX0 + 20, y + 6, ins[i], 1, C_TEXT);
-        gfx_hline(VX0 + 42, y + 10, 30, active ? C_AMBER : C_GRIDL);
-    }
-    gfx_vline(VX0 + 72, VY0 + 24, 61, active ? C_AMBER : C_GRIDL);
-    if (canvas.g[G_MIDI_MODE]) {
-        for (unsigned e = 0; e < TP_EMITTERS; ++e) {
-            int y = VY0 + 8 + (int)e * 22;
-            char a[12] = "CH "; a[3] = (char)('1' + e); a[4] = 0; strcat(a, " > E"); a[8] = (char)('1' + e); a[9] = 0;
-            gfx_fill(100, y, 124, 18, gfx_mix(C_BG, emitter_color[e], 60)); gfx_text(108, y + 5, a, 1, C_TEXT);
-        }
-    } else {
-        char a[16] = "ANY CH > E"; a[10] = (char)('1' + sel); a[11] = 0;
-        gfx_fill(100, VY0 + 30, 124, 24, gfx_mix(C_BG, emitter_color[sel], 70)); gfx_text(108, VY0 + 38, a, 1, C_TEXT);
-    }
-    char a[28], b[12];
-    tempura_format(tempura_global_info(G_CELL_CH), canvas.g[G_CELL_CH], b);
-    strcpy(a, "CELL NOTES ON CH "); strcat(a, b);
-    gfx_text(VX0, VY1 - 36, a, 1, C_DIM);
-    strcpy(a, "KEYS OUT TO "); strcat(a, tempura_list_name(tempura_global_info(G_KEY_OUT), canvas.g[G_KEY_OUT]));
-    gfx_text(VX0, VY1 - 22, a, 1, C_DIM);
-    unsigned clock = tempura_midi_clock_bpm();
-    strcpy(a, "CLOCK IN ");
-    if (clock) { vnum(b, (float)clock, 0, " BPM"); strcat(a, b); } else strcat(a, "NONE");
-    gfx_text(VX0, VY1 - 8, a, 1, clock ? C_GREEN : C_DIM);
-}
-static void view_live(void)
-{
-    struct tp_stats st; tempura_stats(&st);
-    unsigned live_track = TP_TRACKS;
-    for (unsigned t = 0; t < TP_TRACKS && live_track == TP_TRACKS; ++t) if (canvas.tr[t][TR_SOURCE] == TP_SOURCE_LIVE) live_track = t;
-    int top = VY0 + 22, bot = VY0 + 80, mid = (top + bot) / 2;
-    unsigned frozen = canvas.g[G_LIVE_FREEZE];
-    if (band_hits(VY0, VY0 + 16)) {
-        gfx_text(VX0, VY0, tempura_list_name(tempura_global_info(G_LIVE_SRC), canvas.g[G_LIVE_SRC]), 2, C_TEAL);
-        rtext(VX1, VY0 + 4, frozen ? "FROZEN" : "RECORDING", frozen ? C_AMBER : C_BEET);
-    }
-    if (band_hits(top, bot)) {
-        gfx_rect(VX0, top, VW, bot - top, C_GRIDL);
-        if (live_track < TP_TRACKS)
-            for (int x = 0; x < VW; x += 2) {
-                int h = (int)tempura_track_peak(live_track, (unsigned)(x * 160 / VW)) * (bot - top - 4) / 2 / 255;
-                gfx_vline(VX0 + x, mid - h, 2 * h + 1, RGB(70, 120, 110));
-            }
-        else ctext(120, mid - 3, "NO TRACK SET TO LIVE IN (SCL)", 1, C_DIM);
-        gfx_vline(VX0 + (int)tempura_live_head() * VW / 160, top, bot - top, frozen ? C_DIM : C_BEET);
-    }
-    if (band_hits(bot + 4, VY1)) {
-        char a[24], b[12];
-        seconds_label(b, (float)st.heap_live / 2.0f / (float)TP_LIVE_RATE); strcpy(a, "TAPE LOOP "); strcat(a, b);
-        gfx_text(VX0, bot + 8, a, 1, C_DIM);
-        gfx_text(VX0, bot + 26, "IN GAIN", 1, C_DIM); hbar(VX0 + 56, bot + 27, VW - 56, 5, vnorm(canvas.g[G_LIVE_GAIN]), C_TEAL);
-        gfx_text(VX0, bot + 42, "MONITOR", 1, C_DIM); hbar(VX0 + 56, bot + 43, VW - 56, 5, vnorm(canvas.g[G_LIVE_MONITOR]), C_TEXT);
-        gfx_text(VX0, bot + 60, "REC+PLAY: FREEZE / RECORD", 1, C_DIM);
     }
 }
 static void view_arp(void)
@@ -750,12 +610,8 @@ static void draw_view(unsigned view)
     case V_SENDS: view_sends(); break;
     case V_MODFX: view_modfx(); break;
     case V_DELAY: view_delay(); break;
-    case V_DLYMOD: view_dlymod(); break;
     case V_REVERB: view_reverb(); break;
     case V_TRACK: view_track(); break;
-    case V_KEYS: view_keys(); break;
-    case V_MIDI: view_midi(); break;
-    case V_LIVE: view_live(); break;
     case V_ARP: view_arp(); break;
     default: break;
     }
