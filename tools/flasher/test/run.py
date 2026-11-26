@@ -50,6 +50,15 @@ with sync_playwright() as p:
     check('same build again: nothing to install', 'already runs exactly this build' in c2, c2)
     page.context.close()
 
+    # 1b. Android: the update loader only appears in a fresh MIDI access.
+    page = fresh([{}])
+    page.evaluate('() => window.__fm1.opts.android = true')
+    connect(page); tick(page)
+    page.evaluate("() => document.getElementById('m4').textContent = ''"); page.click('#flash')
+    done = wait_text(page, 'm4', r'Done\.|update mode|not visible|old firmware', 300)
+    check('Android: finds the update loader after the restart and completes', 'Done.' in done, done + ' | ' + str(page.evaluate('() => window.__fm1.log')))
+    page.context.close()
+
     # 2. Cable pulled at 40 % of the write, device stays in update mode.
     page = fresh([{}])
     connect(page); tick(page)

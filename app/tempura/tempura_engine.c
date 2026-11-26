@@ -121,10 +121,11 @@ TP_INLINE void tp_zero(void *p, unsigned bytes)
 
 /* ================================================================ init */
 /* Control-task code below (until the slots section) is optimised for size. */
-#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
-static __attribute__((noinline)) float i_exp(float x) { return tp_exp(x); }
-static __attribute__((noinline)) float i_cos1(float x) { return tp_cos1(x); }
-static void build_windows(void)
+/* Size-optimised: TP_SMALL on each function (the FM-1's clang 4 has no
+ * "#pragma clang attribute", which earlier builds relied on). */
+TP_SMALL static __attribute__((noinline)) float i_exp(float x) { return tp_exp(x); }
+TP_SMALL static __attribute__((noinline)) float i_cos1(float x) { return tp_cos1(x); }
+TP_SMALL static void build_windows(void)
 {
     for (unsigned i = 0; i <= 256; ++i) {
         float x = (float)i / 256.0f;
@@ -144,7 +145,7 @@ static void build_windows(void)
     }
     for (unsigned s = 0; s < 6; ++s) window_table[s][0] = window_table[s][256] = 0.0f;
 }
-void tempura_engine_init(void)
+TP_SMALL void tempura_engine_init(void)
 {
     memset(voices, 0, sizeof voices);
     memset(grains, 0, sizeof grains);
@@ -156,7 +157,7 @@ void tempura_engine_init(void)
 }
 
 enum { TP_HEAP_RESERVE = 64 * 1024 };
-void *tp_alloc_reserved(size_t bytes)
+TP_SMALL void *tp_alloc_reserved(size_t bytes)
 {
     void *reserve = malloc(TP_HEAP_RESERVE);
     if (!reserve) return NULL;
@@ -164,7 +165,7 @@ void *tp_alloc_reserved(size_t bytes)
     free(reserve);
     return p;
 }
-void tempura_engine_allocate(void)
+TP_SMALL void tempura_engine_allocate(void)
 {
     /* Called once the FM-1 has started (after the splash), never at boot. */
     if (cache == cache_small) {
@@ -193,15 +194,14 @@ void tempura_engine_allocate(void)
         }
     }
 }
-void tempura_block_clock(uint32_t (*used_ticks)(void), uint32_t block_ticks)
+TP_SMALL void tempura_block_clock(uint32_t (*used_ticks)(void), uint32_t block_ticks)
 {
     clock_pct_ticks = block_ticks / 100U;
     clock_used = clock_pct_ticks ? used_ticks : NULL;
 }
-void tempura_set_safe_mode(unsigned on) { safe_mode = on != 0; }
-unsigned tempura_safe_mode(void) { return safe_mode; }
+TP_SMALL void tempura_set_safe_mode(unsigned on) { safe_mode = on != 0; }
+TP_SMALL unsigned tempura_safe_mode(void) { return safe_mode; }
 
-#pragma clang attribute pop
 /* ============================================================== slots */
 __attribute__((minsize)) void tempura_bind_slot(unsigned slot, const uint8_t *data, unsigned bytes, unsigned frames, const char *name)
 {
@@ -1103,11 +1103,12 @@ unsigned tempura_live_head(void) { if (!live_len) return 0; return (unsigned)((u
 
 /* =========================================================== cooking */
 /* Control-task code from here to the end is optimised for size. */
-#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
-static __attribute__((noinline)) float c_exp2(float x) { return tp_exp2(x); }
-static float c_exp(float x) { return c_exp2(x * 1.442695041f); }
-static float norm(int v) { return (float)v * (1.0f / 127.0f); }
-void tempura_engine_cook(const struct tp_canvas *c)
+/* Size-optimised: TP_SMALL on each function (the FM-1's clang 4 has no
+ * "#pragma clang attribute", which earlier builds relied on). */
+TP_SMALL static __attribute__((noinline)) float c_exp2(float x) { return tp_exp2(x); }
+TP_SMALL static float c_exp(float x) { return c_exp2(x * 1.442695041f); }
+TP_SMALL static float norm(int v) { return (float)v * (1.0f / 127.0f); }
+TP_SMALL void tempura_engine_cook(const struct tp_canvas *c)
 {
     struct tp_cooked k;
     memset(&k, 0, sizeof k);
@@ -1212,7 +1213,7 @@ void tempura_engine_cook(const struct tp_canvas *c)
 }
 
 /* ======================================================= visualisation */
-unsigned tempura_grain_snapshot(struct tp_grain_view *out, unsigned max)
+TP_SMALL unsigned tempura_grain_snapshot(struct tp_grain_view *out, unsigned max)
 {
     unsigned n = 0;
     for (unsigned i = 0; i < TP_MAX_GRAINS && n < max; ++i) {
@@ -1237,12 +1238,12 @@ unsigned tempura_grain_snapshot(struct tp_grain_view *out, unsigned max)
     return n;
 }
 const float *tempura_window(unsigned shape) { return window_table[shape < 6U ? shape : 0U]; }
-void tempura_lfo_view(unsigned e, float *phase, float *value)
+TP_SMALL void tempura_lfo_view(unsigned e, float *phase, float *value)
 {
     if (e >= TP_EMITTERS) e = 0;
     *phase = lfo_phase[e]; *value = lfo_value[e];
 }
-unsigned tempura_env_view(unsigned e, float *level)
+TP_SMALL unsigned tempura_env_view(unsigned e, float *level)
 {
     unsigned stage = 0; float best = 0.0f;
     for (unsigned i = 0; i < TP_VOICES; ++i) {
@@ -1253,14 +1254,14 @@ unsigned tempura_env_view(unsigned e, float *level)
     *level = best;
     return stage;
 }
-unsigned tempura_voice_mask(void)
+TP_SMALL unsigned tempura_voice_mask(void)
 {
     unsigned mask = 0;
     for (unsigned i = 0; i < TP_VOICES; ++i)
         if (voices[i].active && voices[i].stage != 2) mask |= 1U << voices[i].emitter;
     return mask;
 }
-void tempura_stats(struct tp_stats *s)
+TP_SMALL void tempura_stats(struct tp_stats *s)
 {
     uint32_t dly = 0, rev = 0;
     tp_fx_heap(&dly, &rev);
@@ -1280,7 +1281,7 @@ static struct peak_job {
     uint8_t done;
 } jobs[TP_TRACKS];
 static int16_t peak_pcm[CHUNK];
-void tempura_peaks_poll(const struct tp_canvas *c)
+TP_SMALL void tempura_peaks_poll(const struct tp_canvas *c)
 {
     unsigned budget = 12;
     for (unsigned t = 0; t < TP_TRACKS; ++t) {
@@ -1326,8 +1327,7 @@ void tempura_peaks_poll(const struct tp_canvas *c)
         }
     }
 }
-uint8_t tempura_track_peak(unsigned track, unsigned pixel)
+TP_SMALL uint8_t tempura_track_peak(unsigned track, unsigned pixel)
 {
     return track < TP_TRACKS && pixel < 160 ? peaks[track][pixel] : 0;
 }
-#pragma clang attribute pop

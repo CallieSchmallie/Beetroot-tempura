@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception
  * Beetroot Tempura: LCD band renderer and 5x7 font. */
 /* Control-task code: optimise for size (the FM-1 app area is about 444 KB). */
-#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
+/* Size-optimised: TP_SMALL on each function (the FM-1's clang 4 has no
+ * "#pragma clang attribute", which earlier builds relied on). */
 #include "tempura_gfx.h"
 #include "fm1.h"
 #include <string.h>
@@ -29,7 +30,7 @@ static const uint8_t font[64][5] = {
 uint16_t *gfx_px;
 int gfx_top;
 
-void gfx_fill(int x, int y, int w, int h, uint16_t c)
+TP_SMALL void gfx_fill(int x, int y, int w, int h, uint16_t c)
 {
     if (w <= 0 || h <= 0) return;
     int y0 = y < gfx_top ? gfx_top : y, y1 = y + h > gfx_top + GFX_BAND ? gfx_top + GFX_BAND : y + h;
@@ -39,26 +40,26 @@ void gfx_fill(int x, int y, int w, int h, uint16_t c)
         for (int k = x0; k < x1; ++k) p[k] = c;
     }
 }
-void gfx_hline(int x, int y, int w, uint16_t c) { gfx_fill(x, y, w, 1, c); }
-void gfx_vline(int x, int y, int h, uint16_t c) { gfx_fill(x, y, 1, h, c); }
-void gfx_rect(int x, int y, int w, int h, uint16_t c)
+TP_SMALL void gfx_hline(int x, int y, int w, uint16_t c) { gfx_fill(x, y, w, 1, c); }
+TP_SMALL void gfx_vline(int x, int y, int h, uint16_t c) { gfx_fill(x, y, 1, h, c); }
+TP_SMALL void gfx_rect(int x, int y, int w, int h, uint16_t c)
 {
     gfx_hline(x, y, w, c); gfx_hline(x, y + h - 1, w, c);
     gfx_vline(x, y, h, c); gfx_vline(x + w - 1, y, h, c);
 }
-uint16_t gfx_mix(uint16_t a, uint16_t b, unsigned t)
+TP_SMALL uint16_t gfx_mix(uint16_t a, uint16_t b, unsigned t)
 {
     unsigned ra = a >> 11, ga = (a >> 5) & 63U, ba = a & 31U;
     unsigned rb = b >> 11, gb = (b >> 5) & 63U, bb = b & 31U;
     unsigned r = (ra * (255U - t) + rb * t) / 255U, g = (ga * (255U - t) + gb * t) / 255U, bl = (ba * (255U - t) + bb * t) / 255U;
     return (uint16_t)((r << 11) | (g << 5) | bl);
 }
-void gfx_vgrad(int x, int y, int w, int h, uint16_t top, uint16_t bottom)
+TP_SMALL void gfx_vgrad(int x, int y, int w, int h, uint16_t top, uint16_t bottom)
 {
     int y0 = y < gfx_top ? gfx_top : y, y1 = y + h < gfx_top + GFX_BAND ? y + h : gfx_top + GFX_BAND;
     for (int r = y0; r < y1; ++r) gfx_fill(x, r, w, 1, gfx_mix(top, bottom, h > 1 ? (unsigned)((r - y) * 255 / (h - 1)) : 0U));
 }
-void gfx_rfill(int x, int y, int w, int h, int r, uint16_t c)
+TP_SMALL void gfx_rfill(int x, int y, int w, int h, int r, uint16_t c)
 {
     static const uint8_t inset[7][6] = {{0}, {1}, {2, 1}, {3, 1, 1}, {4, 2, 1, 1}, {5, 3, 2, 1, 1}, {6, 4, 3, 2, 1, 1}};
     if (r > 6) r = 6;
@@ -67,7 +68,7 @@ void gfx_rfill(int x, int y, int w, int h, int r, uint16_t c)
         gfx_fill(x + e, y + k, w - 2 * e, 1, c);
     }
 }
-void gfx_blend(int x, int y, uint16_t c, unsigned a)
+TP_SMALL void gfx_blend(int x, int y, uint16_t c, unsigned a)
 {
     if (y < gfx_top || y >= gfx_top + GFX_BAND || x < 0 || x >= GFX_W) return;
     uint16_t *p = gfx_px + (y - gfx_top) * GFX_W + x;
@@ -80,21 +81,21 @@ static const uint8_t *glyph(int ch)
     return font[ch - 32];
 }
 /* Columns a glyph uses; digits keep full width so numbers don't jiggle. */
-static void glyph_span(int ch, const uint8_t *g, int *first, int *count)
+TP_SMALL static void glyph_span(int ch, const uint8_t *g, int *first, int *count)
 {
     int a = 0, b = 4;
     if (!(ch >= '0' && ch <= '9')) { while (a < 5 && !g[a]) ++a; while (b >= 0 && !g[b]) --b; }
     if (a > b) { *first = 0; *count = 2; return; }      /* space */
     *first = a; *count = b - a + 1;
 }
-static int src_px(const uint8_t *g, int c, int r) { return c >= 0 && c < 5 && r >= 0 && r < 7 && (g[c] >> r) & 1U; }
-int gfx_label_width(const char *s)
+TP_SMALL static int src_px(const uint8_t *g, int c, int r) { return c >= 0 && c < 5 && r >= 0 && r < 7 && (g[c] >> r) & 1U; }
+TP_SMALL int gfx_label_width(const char *s)
 {
     int w = 0;
     for (; *s; ++s) { int f, n; glyph_span((unsigned char)*s, glyph((unsigned char)*s), &f, &n); w += n + 1; }
     return w ? w - 1 : 0;
 }
-int gfx_label(int x, int y, const char *s, uint16_t c)
+TP_SMALL int gfx_label(int x, int y, const char *s, uint16_t c)
 {
     if (y + 8 <= gfx_top || y >= gfx_top + GFX_BAND) return x + gfx_label_width(s);
     for (; *s; ++s) {
@@ -106,7 +107,7 @@ int gfx_label(int x, int y, const char *s, uint16_t c)
     }
     return x - 1;
 }
-int gfx_title_width(const char *s, unsigned style)
+TP_SMALL int gfx_title_width(const char *s, unsigned style)
 {
     int w = 0;
     for (; *s; ++s) {
@@ -118,7 +119,7 @@ int gfx_title_width(const char *s, unsigned style)
 }
 /* Doubles a glyph with EPX smoothing: diagonal steps become slopes and
  * square corners round off, so large text reads as a drawn letterform. */
-int gfx_title(int x, int y, const char *s, uint16_t top, uint16_t bottom, unsigned style)
+TP_SMALL int gfx_title(int x, int y, const char *s, uint16_t top, uint16_t bottom, unsigned style)
 {
     if (y + 16 <= gfx_top || y >= gfx_top + GFX_BAND) return x + gfx_title_width(s, style);
     for (; *s; ++s) {
@@ -147,8 +148,8 @@ int gfx_title(int x, int y, const char *s, uint16_t top, uint16_t bottom, unsign
     }
     return x;
 }
-int gfx_text_width(const char *s, int scale) { return (int)strlen(s) * 6 * scale; }
-int gfx_text(int x, int y, const char *s, int scale, uint16_t c)
+TP_SMALL int gfx_text_width(const char *s, int scale) { return (int)strlen(s) * 6 * scale; }
+TP_SMALL int gfx_text(int x, int y, const char *s, int scale, uint16_t c)
 {
     if (y + 8 * scale <= gfx_top || y >= gfx_top + GFX_BAND) return x + gfx_text_width(s, scale);
     if (scale == 2) { char one[2] = {0, 0}; for (; *s; ++s, x += 12) { one[0] = *s; gfx_title(x, y, one, c, c, GFX_MONO); } return x; }
@@ -175,7 +176,7 @@ static int sending = -1;
 static unsigned next_band = GFX_BANDS, frame_active;
 static uint32_t band_sum[GFX_BANDS];
 
-void gfx_init(void)
+TP_SMALL void gfx_init(void)
 {
     fm1_screen_init();
     memset(band_sum, 0xa5, sizeof band_sum);
@@ -183,21 +184,21 @@ void gfx_init(void)
     sending = -1;
     next_band = GFX_BANDS; frame_active = 0;
 }
-void gfx_request_frame(void)
+TP_SMALL void gfx_request_frame(void)
 {
     if (frame_active) return;
     frame_active = 1;
     next_band = 0;
 }
-int gfx_frame_busy(void) { return frame_active; }
+TP_SMALL int gfx_frame_busy(void) { return frame_active; }
 
-static uint32_t checksum(const uint16_t *p)
+TP_SMALL static uint32_t checksum(const uint16_t *p)
 {
     uint32_t h = 2166136261U;
     for (unsigned i = 0; i < GFX_W * GFX_BAND; i += 2) h = (h ^ (p[i] | (uint32_t)p[i + 1] << 16)) * 16777619U;
     return h;
 }
-void gfx_pump(gfx_draw_fn draw, unsigned budget)
+TP_SMALL void gfx_pump(gfx_draw_fn draw, unsigned budget)
 {
     if (sending >= 0) {
         int pending = fm1_screen_pending();
@@ -230,4 +231,3 @@ void gfx_pump(gfx_draw_fn draw, unsigned budget)
     if (frame_active && next_band >= GFX_BANDS && ready_band[0] < 0 && ready_band[1] < 0) frame_active = 0;
 }
 
-#pragma clang attribute pop

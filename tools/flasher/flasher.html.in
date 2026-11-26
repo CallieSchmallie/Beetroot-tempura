@@ -217,7 +217,7 @@ const en = text => { text = String(text || ''); for (const k in EN) if (text.sta
 const say = (id, text, kind = '') => { const el = $(id); el.textContent = text; el.className = 'msg ' + kind; };
 const enable = (id, on) => $(id).classList.toggle('off', !on);
 
-let pkg = null, updater = null, access = null, connected = null;
+let pkg = null, updater = null, access = null, connected = null, refresher = null;
 
 $('support').textContent = !W ? 'The updater code failed to load.' :
   !navigator.requestMIDIAccess ? 'This browser has no Web MIDI. Use desktop Chrome or Edge, or Chrome on Android with a USB-OTG cable.' :
@@ -271,6 +271,13 @@ async function doConnect() {
     if (updater) await updater.disconnect().catch(() => {});
     // Give the FM-1 two minutes to come back after each restart (default 40 s).
     updater = new W.Updater(access, pkg, (phase, pct) => { say('m4', en(phase) + (pct < 100 ? ' · ' + pct + '%' : ''), pct >= 100 ? 'ok' : ''); $('bar').style.width = pct + '%'; }, { reconnect: 120000 });
+    /* Chrome on Android often doesn't list a USB device that appears while the
+     * page is open, such as the FM-1 restarting into its update loader. A fresh
+     * MIDI access every few seconds lets the updater find it again. */
+    clearInterval(refresher);
+    refresher = setInterval(async () => {
+      try { const fresh = await navigator.requestMIDIAccess({ sysex: true }); if (fresh && updater) { access = fresh; updater.access = fresh; } } catch (e) { /* keep the old access */ }
+    }, 4000);
     connected = await updater.connect({ force: $('force').checked });
     if (connected.migration) {
       $('forcebox').hidden = false;
@@ -402,7 +409,7 @@ $('flash').addEventListener('click', async () => {
     } else {
       say('m4', why + ' The FM-1 is not visible over USB right now (MIDI ports seen: ' + ports + '). Leave it plugged in for a minute, then press Connect. If its screen stays dark and nothing appears, unplug it, plug it back in and press Connect with "replace other firmware" ticked.', 'bad');
     }
-  } finally { window.onbeforeunload = null; stayAwake(false); $('files').disabled = false; $('connect').disabled = false; }
+  } finally { clearInterval(refresher); refresher = null; window.onbeforeunload = null; stayAwake(false); $('files').disabled = false; $('connect').disabled = false; }
 });
 })();
 </script>

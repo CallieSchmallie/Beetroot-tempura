@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception
  * Beetroot Tempura: parameter metadata, formatting and the default canvas. */
 /* Control-task code: optimise for size (the FM-1 app area is about 444 KB). */
-#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
+/* Size-optimised: TP_SMALL on each function (the FM-1's clang 4 has no
+ * "#pragma clang attribute", which earlier builds relied on). */
 #include "tempura.h"
 #include <string.h>
 
@@ -148,7 +149,7 @@ const char *tempura_list_name(const struct tp_param_info *info, int v)
     return "?";
 }
 
-static void put_int(char *out, int v, int sign)
+TP_SMALL static void put_int(char *out, int v, int sign)
 {
     char tmp[12];
     unsigned n = 0, u = (unsigned)(v < 0 ? -v : v);
@@ -159,14 +160,14 @@ static void put_int(char *out, int v, int sign)
     while (n) out[k++] = tmp[--n];
     out[k] = 0;
 }
-static void append(char *out, const char *s)
+TP_SMALL static void append(char *out, const char *s)
 {
     size_t n = strlen(out);
     while (*s && n < 11) out[n++] = *s++;
     out[n] = 0;
 }
 /* Display mappings mirror the engine's curves in tempura_engine.c. */
-void tempura_format(const struct tp_param_info *info, int v, char out[12])
+TP_SMALL void tempura_format(const struct tp_param_info *info, int v, char out[12])
 {
     out[0] = 0;
     if (!info) return;
@@ -206,17 +207,17 @@ void tempura_format(const struct tp_param_info *info, int v, char out[12])
     }
 }
 
-static void set_defaults(int16_t *values, const struct tp_param_info *info, unsigned count)
+TP_SMALL static void set_defaults(int16_t *values, const struct tp_param_info *info, unsigned count)
 {
     for (unsigned i = 0; i < count; ++i) values[i] = info[i].def;
 }
-static void place(struct tp_canvas *c, unsigned e, unsigned track, unsigned first, unsigned last)
+TP_SMALL static void place(struct tp_canvas *c, unsigned e, unsigned track, unsigned first, unsigned last)
 {
     for (unsigned r = first; r <= last && r < TP_ROWS; ++r) c->cells[e][track] |= (uint8_t)(1U << r);
 }
 /* Four contrasting emitters on a fresh canvas: a soft cloud, a glitchy
  * scatter, a slow octave-down drone and a reversed shimmer. */
-void tempura_canvas_default(struct tp_canvas *c)
+TP_SMALL void tempura_canvas_default(struct tp_canvas *c)
 {
     memset(c, 0, sizeof *c);
     c->magic = TP_CANVAS_MAGIC;
@@ -254,14 +255,14 @@ void tempura_canvas_default(struct tp_canvas *c)
     place(c, 3, 5, 2, 3); place(c, 3, 7, 6, 7);
 }
 
-static void clamp_values(int16_t *values, const struct tp_param_info *info, unsigned count)
+TP_SMALL static void clamp_values(int16_t *values, const struct tp_param_info *info, unsigned count)
 {
     for (unsigned i = 0; i < count; ++i) {
         if (values[i] < info[i].min) values[i] = info[i].min;
         if (values[i] > info[i].max) values[i] = info[i].max;
     }
 }
-void tempura_canvas_sanitize(struct tp_canvas *c)
+TP_SMALL void tempura_canvas_sanitize(struct tp_canvas *c)
 {
     c->magic = TP_CANVAS_MAGIC; c->version = TP_CANVAS_VERSION; c->bytes = sizeof *c;
     for (unsigned i = 0; i < 12; ++i)
@@ -274,7 +275,7 @@ void tempura_canvas_sanitize(struct tp_canvas *c)
     clamp_values(c->g, global_info, G_COUNT);
 }
 
-uint32_t tempura_crc32(uint32_t crc, const void *data, unsigned bytes)
+TP_SMALL uint32_t tempura_crc32(uint32_t crc, const void *data, unsigned bytes)
 {
     const uint8_t *p = data;
     crc = ~crc;
@@ -285,4 +286,3 @@ uint32_t tempura_crc32(uint32_t crc, const void *data, unsigned bytes)
     return ~crc;
 }
 
-#pragma clang attribute pop

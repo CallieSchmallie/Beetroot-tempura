@@ -15,7 +15,8 @@
  *   HOME+PLAY    panic
  */
 /* Control-task code: optimise for size (the FM-1 app area is about 444 KB). */
-#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
+/* Size-optimised: TP_SMALL on each function (the FM-1's clang 4 has no
+ * "#pragma clang attribute", which earlier builds relied on). */
 #include "tempura.h"
 #include "tempura_internal.h"
 #include "tempura_gfx.h"
@@ -122,17 +123,17 @@ static struct tp_grain_view grain_view[TP_MAX_GRAINS];
 static unsigned grain_views;
 static unsigned painting;
 
-struct tp_canvas *tempura_canvas(void) { return &canvas; }
-unsigned tempura_ui_selected(void) { return sel; }
+TP_SMALL struct tp_canvas *tempura_canvas(void) { return &canvas; }
+TP_SMALL unsigned tempura_ui_selected(void) { return sel; }
 
-static void say(const char *text)
+TP_SMALL static void say(const char *text)
 {
     size_t n = strlen(text);
     if (n > sizeof notice - 1) n = sizeof notice - 1;
     memcpy(notice, text, n); notice[n] = 0;
     notice_until = fm1_millis() + 1600U;
 }
-static void changed(void) { canvas_dirty = 1; }
+TP_SMALL static void changed(void) { canvas_dirty = 1; }
 
 static const struct page *current_page(void)
 {
@@ -140,12 +141,12 @@ static const struct page *current_page(void)
 }
 
 /* ---------------------------------------------------------------- keys */
-static void key_out(uint8_t status, uint8_t note, uint8_t vel)
+TP_SMALL static void key_out(uint8_t status, uint8_t note, uint8_t vel)
 {
     uint8_t m[3] = {status, note, vel};
     tempura_midi_key_out(m, 3);
 }
-static void key_down(unsigned k)
+TP_SMALL static void key_down(unsigned k)
 {
     key_mask[k] = 0; key_cell[k] = 255;
     if (canvas.g[G_KEY_MODE] == KEYS_CELLS) {
@@ -174,7 +175,7 @@ static void key_down(unsigned k)
     for (unsigned e = 0; e < TP_EMITTERS; ++e) if (mask & (1U << e)) (void)tempura_note_on(e, (unsigned)note, 100, 255, 0);
     key_out((uint8_t)(0x90U | (canvas.g[G_MIDI_MODE] ? sel : 0U)), (uint8_t)note, 100);
 }
-static void key_up(unsigned k)
+TP_SMALL static void key_up(unsigned k)
 {
     if (!key_mask[k]) return;
     for (unsigned e = 0; e < TP_EMITTERS; ++e)
@@ -184,13 +185,13 @@ static void key_up(unsigned k)
     key_out((uint8_t)(0x80U | (canvas.g[G_MIDI_MODE] ? e : 0U)), key_cell[k] < 64 ? (uint8_t)(36U + key_cell[k]) : key_note[k], 0);
     key_mask[k] = 0;
 }
-static void release_all_keys(void)
+TP_SMALL static void release_all_keys(void)
 {
     for (unsigned k = 0; k < 27; ++k) if (prev_keys & (1U << k)) key_up(k);
 }
 
 /* ------------------------------------------------------------- canvases */
-static void refresh_slot_names(void)
+TP_SMALL static void refresh_slot_names(void)
 {
     for (unsigned i = 0; i < TP_SLOTS; ++i) {
         memset(slot_names[i], 0, sizeof slot_names[i]);
@@ -198,7 +199,7 @@ static void refresh_slot_names(void)
         if (!slot_valid[i]) memcpy(slot_names[i], "- EMPTY -", 10);
     }
 }
-static void load_canvas(unsigned slot, int quiet)
+TP_SMALL static void load_canvas(unsigned slot, int quiet)
 {
     struct tp_canvas next;
     int r = tempura_store_load(slot, &next);
@@ -210,14 +211,14 @@ static void load_canvas(unsigned slot, int quiet)
     changed();
     if (!quiet) { char m[28] = "LOADED "; memcpy(m + 7, canvas.name, 12); m[19] = 0; say(m); }
 }
-unsigned tempura_ui_program_change(unsigned slot)
+TP_SMALL unsigned tempura_ui_program_change(unsigned slot)
 {
     load_canvas(slot % TP_SLOTS, 0);
     return 0;
 }
 
 /* ------------------------------------------------------------- editing */
-static int16_t *param_ref(const struct page *pg, unsigned i, const struct tp_param_info **info)
+TP_SMALL static int16_t *param_ref(const struct page *pg, unsigned i, const struct tp_param_info **info)
 {
     int p = pg->p[i];
     if (p < 0) { *info = NULL; return NULL; }
@@ -227,7 +228,7 @@ static int16_t *param_ref(const struct page *pg, unsigned i, const struct tp_par
     *info = NULL;
     return NULL;
 }
-static int accelerate(unsigned enc, int delta, uint32_t now, int range)
+TP_SMALL static int accelerate(unsigned enc, int delta, uint32_t now, int range)
 {
     int dir = (delta > 0) - (delta < 0);
     unsigned fast = dir == enc_dir[enc] && now - enc_ms[enc] < 60U;
@@ -235,7 +236,7 @@ static int accelerate(unsigned enc, int delta, uint32_t now, int range)
     if (range > 40 && fast) return delta * 4;
     return delta;
 }
-static void edit_param(unsigned knob, int delta, uint32_t now)
+TP_SMALL static void edit_param(unsigned knob, int delta, uint32_t now)
 {
     const struct page *pg = current_page();
     const struct tp_param_info *info;
@@ -253,7 +254,7 @@ static void edit_param(unsigned knob, int delta, uint32_t now)
         changed();
     }
 }
-static void toggle_cell(unsigned set_only)
+TP_SMALL static void toggle_cell(unsigned set_only)
 {
     uint8_t bit = (uint8_t)(1U << cur_y);
     if (set_only) canvas.cells[sel][cur_x] |= bit;
@@ -262,7 +263,7 @@ static void toggle_cell(unsigned set_only)
 }
 
 /* ------------------------------------------------------------ bluetooth */
-static void ble_controls(const struct fm1_controls *c, uint32_t pressed)
+TP_SMALL static void ble_controls(const struct fm1_controls *c, uint32_t pressed)
 {
     struct fm1_ble_status st;
     fm1_ble_get_status(&st);
@@ -294,7 +295,7 @@ static void ble_controls(const struct fm1_controls *c, uint32_t pressed)
 }
 
 /* --------------------------------------------------------------- canvas */
-static void canvas_controls(const struct fm1_controls *c, uint32_t pressed)
+TP_SMALL static void canvas_controls(const struct fm1_controls *c, uint32_t pressed)
 {
     int move = c->encoders[0] + c->encoders[6];
     if (move) {
@@ -334,14 +335,14 @@ static void canvas_controls(const struct fm1_controls *c, uint32_t pressed)
 }
 
 /* ----------------------------------------------------------- main poll */
-static void open_section(unsigned s)
+TP_SMALL static void open_section(unsigned s)
 {
     if (section == s) page_of[s] = (page_of[s] + 1U) % sections[s].count;
     else section = s;
     save_armed = 0; forget_armed = 0;
     if (s == S_CANVAS) { refresh_slot_names(); canvas_cursor = canvas_slot; }
 }
-static void handle_buttons(const struct fm1_controls *c, uint32_t pressed, uint32_t released, uint32_t now)
+TP_SMALL static void handle_buttons(const struct fm1_controls *c, uint32_t pressed, uint32_t released, uint32_t now)
 {
     uint32_t held = c->buttons;
     for (unsigned b = 0; b < 14; ++b) if (pressed & BTN(b)) press_ms[b] = now;
@@ -399,7 +400,7 @@ static void handle_buttons(const struct fm1_controls *c, uint32_t pressed, uint3
     }
 }
 
-static void handle_encoders(const struct fm1_controls *c, uint32_t now)
+TP_SMALL static void handle_encoders(const struct fm1_controls *c, uint32_t now)
 {
     const struct page *pg = current_page();
     if (pg->kind == K_BLE || pg->kind == K_CANVAS) return;
@@ -416,7 +417,7 @@ static void handle_encoders(const struct fm1_controls *c, uint32_t now)
     for (unsigned k = 0; k < 4; ++k) if (c->encoders[2 + k]) edit_param(k, c->encoders[2 + k], now);
 }
 
-static void handle_keys(const struct fm1_controls *c)
+TP_SMALL static void handle_keys(const struct fm1_controls *c)
 {
     uint32_t down = c->keys & ~prev_keys, up = prev_keys & ~c->keys;
     for (unsigned k = 0; k < 27; ++k) {
@@ -430,7 +431,7 @@ static void handle_keys(const struct fm1_controls *c)
     }
 }
 
-static void update_leds(void)
+TP_SMALL static void update_leds(void)
 {
     const struct page *pg = current_page();
     static uint32_t shown = 0xffffffffU, shown_keys = 0xffffffffU;
@@ -454,7 +455,7 @@ static void update_leds(void)
 }
 
 /* ============================================================== drawing */
-static void draw_header(void)
+TP_SMALL static void draw_header(void)
 {
     if (gfx_top >= 16) return;
     gfx_vgrad(0, 0, GFX_W, 16, RGB(34, 14, 34), RGB(10, 4, 12));
@@ -487,13 +488,13 @@ static void draw_header(void)
     gfx_fill(220, 5, (int)(cpu * 17U / 100U), 5, cpu > 80 ? C_BEET : C_GREEN);
 }
 
-static uint16_t cell_bg(unsigned t, unsigned r)
+TP_SMALL static uint16_t cell_bg(unsigned t, unsigned r)
 {
     uint16_t bg = ((r + t) & 1U) ? C_CELL1 : C_CELL0;
     if ((canvas.cells[sel][t] >> r) & 1U) bg = gfx_mix(bg, emitter_color[sel], 52);
     return bg;
 }
-static void draw_grid(void)
+TP_SMALL static void draw_grid(void)
 {
     if (gfx_top + GFX_BAND <= GY - 2 || gfx_top >= GY + CH * TP_ROWS + 2) return;
     gfx_fill(0, GY - 2, GFX_W, CH * TP_ROWS + 4, C_BG);
@@ -553,7 +554,7 @@ static void draw_grid(void)
     gfx_rect(cx, cy, CW + 1, CH + 1, cc);
 }
 
-static void knob(unsigned col, const char *label, const char *value, uint16_t color, int fill255)
+TP_SMALL static void knob(unsigned col, const char *label, const char *value, uint16_t color, int fill255)
 {
     int x = 4 + (int)col * 59;
     gfx_label(x, 196, label, RGB(150, 130, 150));
@@ -578,7 +579,7 @@ static const uint8_t section_icon[SECTIONS][8] = {
     {0xfe, 0x82, 0xfe, 0x82, 0xba, 0xba, 0xfe, 0x00},   /* SAVE: disk */
     {0x03, 0x03, 0x0c, 0x0c, 0x30, 0x30, 0xc0, 0xc0},   /* ARP: steps */
 };
-static void draw_title(const char *title, uint16_t color, const char *right)
+TP_SMALL static void draw_title(const char *title, uint16_t color, const char *right)
 {
     for (int r = 0; r < 8; ++r)
         for (int b = 0; b < 8; ++b) if (section_icon[section][r] & (0x80U >> b)) gfx_fill(4 + b, 183 + r, 1, 1, color);
@@ -586,7 +587,7 @@ static void draw_title(const char *title, uint16_t color, const char *right)
     gfx_label(16, 184, title, color);
     if (right) gfx_label(236 - gfx_label_width(right), 184, right, RGB(150, 130, 150));
 }
-static void draw_params(const struct page *pg)
+TP_SMALL static void draw_params(const struct page *pg)
 {
     char title[28] = {0}, right[16] = {0};
     uint16_t color = C_TEXT;
@@ -617,7 +618,7 @@ static void draw_params(const struct page *pg)
     }
 }
 
-static void draw_overlay_box(void)
+TP_SMALL static void draw_overlay_box(void)
 {
     gfx_fill(0, GY - 2, GFX_W, CH * TP_ROWS + 4, C_PANEL);
     gfx_hline(0, GY - 2, GFX_W, C_BEET);
@@ -627,7 +628,7 @@ static const char *ble_state_name(unsigned s)
     static const char *const names[] = {"OFF", "IDLE", "ADVERTISING", "SCANNING", "CONNECTING", "DISCOVERING", "CONNECTED", "READY", "DISCONNECTING"};
     return s < 9 ? names[s] : "?";
 }
-static void draw_ble(void)
+TP_SMALL static void draw_ble(void)
 {
     struct fm1_ble_status st; fm1_ble_get_status(&st);
     struct fm1_bluetooth_status bt; fm1_bluetooth_get_status(&bt);
@@ -661,14 +662,14 @@ static void draw_ble(void)
     knob(1, "BT AUDIO", bt_audio_on ? "ON" : "OFF", C_TEXT, -1);
     knob(3, "FORGET", forget_armed ? "REC!" : "TURN", forget_armed ? C_BEET : C_DIM, -1);
 }
-static void put_kb(char *out, const char *label, uint32_t bytes)
+TP_SMALL static void put_kb(char *out, const char *label, uint32_t bytes)
 {
     char num[8]; unsigned kb = bytes / 1024U, n = 0; char tmp[8];
     do { tmp[n++] = (char)('0' + kb % 10U); kb /= 10U; } while (kb);
     unsigned k = 0; while (n) num[k++] = tmp[--n]; num[k] = 0;
     strcpy(out, label); strcat(out, num); strcat(out, "K");
 }
-static void draw_system(void)
+TP_SMALL static void draw_system(void)
 {
     struct tp_stats st; tempura_stats(&st);
     if (gfx_top < PANEL_Y) {
@@ -699,7 +700,7 @@ static void draw_system(void)
     }
     draw_title("SYSTEM", C_TEXT, NULL);
 }
-static void draw_canvas_page(void)
+TP_SMALL static void draw_canvas_page(void)
 {
     if (gfx_top < PANEL_Y) {
         draw_overlay_box();
@@ -724,7 +725,7 @@ static void draw_canvas_page(void)
 
 #include "tempura_views.inc"
 
-static void draw(void)
+TP_SMALL static void draw(void)
 {
     const struct page *pg = current_page();
     static unsigned frame_view;
@@ -747,19 +748,19 @@ static void draw(void)
 }
 
 /* ---- splash: a lit, battered beetroot, drawn per pixel ---- */
-static float sp_hash(int x, int y)
+TP_SMALL static float sp_hash(int x, int y)
 {
     uint32_t h = (uint32_t)x * 374761393U + (uint32_t)y * 668265263U;
     h = (h ^ (h >> 13)) * 1274126177U;
     return (float)((h ^ (h >> 16)) & 1023U) * (1.0f / 1023.0f);
 }
-static uint16_t sp_rgb(float r, float g, float b)
+TP_SMALL static uint16_t sp_rgb(float r, float g, float b)
 {
     r = r < 0 ? 0 : r > 1 ? 1 : r; g = g < 0 ? 0 : g > 1 ? 1 : g; b = b < 0 ? 0 : b > 1 ? 1 : b;
     return RGB((unsigned)(r * 255.0f), (unsigned)(g * 255.0f), (unsigned)(b * 255.0f));
 }
-static __attribute__((noinline)) float sp_sin(float x) { return tp_sin1(x); }
-static float sp_sqrt(float x) { if (x <= 0.0f) return 0.0f; float r = x > 1.0f ? x : 1.0f; for (int i = 0; i < 6; ++i) r = 0.5f * (r + x / r); return r; }
+TP_SMALL static __attribute__((noinline)) float sp_sin(float x) { return tp_sin1(x); }
+TP_SMALL static float sp_sqrt(float x) { if (x <= 0.0f) return 0.0f; float r = x > 1.0f ? x : 1.0f; for (int i = 0; i < 6; ++i) r = 0.5f * (r + x / r); return r; }
 enum { BEET_X = 120, BEET_Y = 94, BEET_R = 34 };
 /* Leaves: base, direction (unit), length, half width. */
 static const struct { int8_t bx; float dx, dy, len, wid; } leaves[5] = {
@@ -767,7 +768,7 @@ static const struct { int8_t bx; float dx, dy, len, wid; } leaves[5] = {
     {-4, -0.52f, -0.85f, 60.0f, 16.0f}, {4, 0.58f, -0.81f, 58.0f, 15.0f}, {0, 0.04f, -1.0f, 66.0f, 17.0f},
 };
 /* Returns 1 and the colour when (x, y) is on a leaf or stem. */
-static int sp_leaf(int x, int y, float *r, float *g, float *b)
+TP_SMALL static int sp_leaf(int x, int y, float *r, float *g, float *b)
 {
     int hit = 0;
     for (unsigned i = 0; i < 5; ++i) {
@@ -794,7 +795,7 @@ static int sp_leaf(int x, int y, float *r, float *g, float *b)
     }
     return hit;
 }
-static void boot_splash(void)
+TP_SMALL static void boot_splash(void)
 {
     for (int y = gfx_top; y < gfx_top + GFX_BAND; ++y) {
         uint16_t *row = gfx_px + (y - gfx_top) * GFX_W;
@@ -876,7 +877,7 @@ static void boot_splash(void)
 }
 
 static unsigned safe;
-static void safe_screen(void)
+TP_SMALL static void safe_screen(void)
 {
     gfx_fill(0, gfx_top, GFX_W, GFX_BAND, C_BG);
     gfx_text(120 - gfx_text_width("SAFE MODE", 2) / 2, 60, "SAFE MODE", 2, C_AMBER);
@@ -889,7 +890,7 @@ static void safe_screen(void)
 }
 
 /* ================================================================ entry */
-void tempura_ui_init(void)
+TP_SMALL void tempura_ui_init(void)
 {
     tempura_engine_init();
     tempura_canvas_default(&canvas);
@@ -903,7 +904,7 @@ void tempura_ui_init(void)
     gfx_request_frame();
 }
 
-void tempura_ui_control(void)
+TP_SMALL void tempura_ui_control(void)
 {
     struct fm1_controls c;
     fm1_controls_read(&c);
@@ -955,6 +956,5 @@ void tempura_ui_control(void)
 }
 
 /* MIDI-triggered canvas edits need a re-cook on the next poll. */
-void tempura_ui_touch(void) { canvas_dirty = 1; }
+TP_SMALL void tempura_ui_touch(void) { canvas_dirty = 1; }
 
-#pragma clang attribute pop

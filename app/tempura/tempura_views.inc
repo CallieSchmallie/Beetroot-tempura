@@ -12,24 +12,25 @@ enum { VX0 = 8, VX1 = 232, VW = VX1 - VX0, VY0 = 22, VY1 = 174 };
 
 /* Out-of-line math for drawing: the DSP versions are force-inlined at every
  * call, which costs code space the FM-1 doesn't have. */
-static __attribute__((noinline)) float vexp2(float x) { return tp_exp2(x); }
-static __attribute__((noinline)) float vsin1(float x) { return tp_sin1(x); }
-static float vexp(float x) { return vexp2(x * 1.442695041f); }
-static float vcos1(float x) { return vsin1(x + 0.25f); }
-static float vmax(float a, float b) { return a > b ? a : b; }
+TP_SMALL static __attribute__((noinline)) float vexp2(float x) { return tp_exp2(x); }
+TP_SMALL static __attribute__((noinline)) float vsin1(float x) { return tp_sin1(x); }
+TP_SMALL static float vexp(float x) { return vexp2(x * 1.442695041f); }
+TP_SMALL static float vcos1(float x) { return vsin1(x + 0.25f); }
+TP_SMALL static float vmax(float a, float b) { return a > b ? a : b; }
 static int16_t plot_a[VW], plot_b[VW];
 static uint16_t ticks[64];             /* grain starts (x | reversed << 12) */
+static int16_t plot_c[VW];
 static uint8_t plot_n;                 /* generic count prepared for the view */
 static float view_f[8];                /* generic values prepared for the view */
 static struct tp_arp_view arp_v;
 
-static int band_hits(int y0, int y1) { return gfx_top < y1 && gfx_top + GFX_BAND > y0; }
-static float vnorm(int v) { return (float)v * (1.0f / 127.0f); }
-static float vclamp(float x, float a, float b) { return x < a ? a : x > b ? b : x; }
+TP_SMALL static int band_hits(int y0, int y1) { return gfx_top < y1 && gfx_top + GFX_BAND > y0; }
+TP_SMALL static float vnorm(int v) { return (float)v * (1.0f / 127.0f); }
+TP_SMALL static float vclamp(float x, float a, float b) { return x < a ? a : x > b ? b : x; }
 static float vlog2(float x);
-static float vsqrt(float x) { return x > 0.0f ? vexp2(0.5f * vlog2(x)) : 0.0f; }
+TP_SMALL static float vsqrt(float x) { return x > 0.0f ? vexp2(0.5f * vlog2(x)) : 0.0f; }
 /* log2 for drawing only: exponent bits plus a quadratic for the mantissa. */
-static float vlog2(float x)
+TP_SMALL static float vlog2(float x)
 {
     union { float f; uint32_t u; } v = {x > 1e-20f ? x : 1e-20f};
     float e = (float)(int)((v.u >> 23) & 255U) - 127.0f;
@@ -37,16 +38,16 @@ static float vlog2(float x)
     float t = (v.f - 1.0f) / (v.f + 1.0f), t2 = t * t;    /* ln m = 2 atanh t */
     return e + 2.8853901f * t * (1.0f + t2 * (0.33333333f + t2 * (0.2f + t2 * 0.14285714f)));
 }
-static int vy(float v, float lo, float hi, int top, int bot)
+TP_SMALL static int vy(float v, float lo, float hi, int top, int bot)
 {
     float t = vclamp((v - lo) / (hi - lo), 0.0f, 1.0f);
     return bot - (int)(t * (float)(bot - top) + 0.5f);
 }
-static uint32_t vhash(uint32_t x) { x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x; }
-static float vrand(uint32_t x) { return (float)(vhash(x) & 0xffffU) * (1.0f / 65535.0f); }
+TP_SMALL static uint32_t vhash(uint32_t x) { x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x; }
+TP_SMALL static float vrand(uint32_t x) { return (float)(vhash(x) & 0xffffU) * (1.0f / 65535.0f); }
 
 /* Draw a prepared curve; base >= 0 also fills down (or up) to that row. */
-static void curve(const int16_t *y, int top, int bot, int base, uint16_t c)
+TP_SMALL static void curve(const int16_t *y, int top, int bot, int base, uint16_t c)
 {
     if (!band_hits(top - 1, bot + 2)) return;
     uint16_t f = gfx_mix(C_BG, c, 70);
@@ -57,10 +58,10 @@ static void curve(const int16_t *y, int top, int bot, int base, uint16_t c)
         gfx_vline(VX0 + i, lo, hi - lo + 1, c);
     }
 }
-static void ctext(int x, int y, const char *s, int scale, uint16_t c) { gfx_text(x - gfx_text_width(s, scale) / 2, y, s, scale, c); }
-static void rtext(int x, int y, const char *s, uint16_t c) { gfx_text(x - gfx_text_width(s, 1), y, s, 1, c); }
+TP_SMALL static void ctext(int x, int y, const char *s, int scale, uint16_t c) { gfx_text(x - gfx_text_width(s, scale) / 2, y, s, scale, c); }
+TP_SMALL static void rtext(int x, int y, const char *s, uint16_t c) { gfx_text(x - gfx_text_width(s, 1), y, s, 1, c); }
 /* "2.3" style numbers for labels. */
-static void vnum(char *out, float v, int decimals, const char *unit)
+TP_SMALL static void vnum(char *out, float v, int decimals, const char *unit)
 {
     int neg = v < 0.0f; if (neg) v = -v;
     unsigned scale = decimals == 2 ? 100U : decimals == 1 ? 10U : 1U;
@@ -73,25 +74,42 @@ static void vnum(char *out, float v, int decimals, const char *unit)
     out[k] = 0;
     if (unit) strcat(out, unit);
 }
-static void seconds_label(char *out, float s)
+TP_SMALL static void seconds_label(char *out, float s)
 {
     if (s < 1.0f) vnum(out, s * 1000.0f, 0, " MS"); else vnum(out, s, s < 10.0f ? 2 : 1, " S");
 }
-static void hbar(int x, int y, int w, int h, float fill, uint16_t c)
+TP_SMALL static void hbar(int x, int y, int w, int h, float fill, uint16_t c)
 {
     gfx_fill(x, y, w, h, C_GRIDL);
     int f = (int)(vclamp(fill, 0.0f, 1.0f) * (float)w + 0.5f);
     if (f) gfx_fill(x, y, f, h, c);
 }
-static void vbar(int x, int top, int bot, int w, float fill, uint16_t c)
+TP_SMALL static void vbar(int x, int top, int bot, int w, float fill, uint16_t c)
 {
     gfx_fill(x, top, w, bot - top, C_GRIDL);
     int h = (int)(vclamp(fill, 0.0f, 1.0f) * (float)(bot - top) + 0.5f);
     if (h) gfx_fill(x, bot - h, w, h, c);
 }
-static void dot(int x, int y, int r, uint16_t c) { gfx_fill(x - r, y - r, 2 * r + 1, 2 * r + 1, c); }
+TP_SMALL static void dot(int x, int y, int r, uint16_t c) { gfx_fill(x - r, y - r, 2 * r + 1, 2 * r + 1, c); }
+/* A soft, glowing dot. */
+TP_SMALL static void glow(int x, int y, uint16_t c)
+{
+    for (int dy = -3; dy <= 3; ++dy)
+        for (int dx = -3; dx <= 3; ++dx) { int d = dx * dx + dy * dy; if (d <= 9) gfx_blend(x + dx, y + dy, c, d <= 2 ? 255U : (unsigned)(200 - d * 18)); }
+}
+/* A straight line, drawn as small squares (t = thickness). */
+TP_SMALL static void seg(int x0, int y0, int x1, int y1, int t, uint16_t c)
+{
+    int lo = y0 < y1 ? y0 : y1, hi = y0 < y1 ? y1 : y0;
+    if (!band_hits(lo - t, hi + t + 1)) return;
+    int dx = x1 - x0, dy = y1 - y0, n = (dx < 0 ? -dx : dx) > (dy < 0 ? -dy : dy) ? (dx < 0 ? -dx : dx) : (dy < 0 ? -dy : dy);
+    for (int i = 0; i <= n; ++i) gfx_fill(x0 + (n ? dx * i / n : 0), y0 + (n ? dy * i / n : 0), t, t, c);
+}
+/* Seconds since start, wrapped (for animation). */
+TP_SMALL static float vtime(void) { return (float)(fm1_millis() % 600000U) * 0.001f; }
+TP_SMALL static float vfrac(float x) { return x - (float)(int)x; }
 
-static float lfo_at(unsigned shape, float t)
+TP_SMALL static float lfo_at(unsigned shape, float t)
 {
     float ph = t - (float)(int)t;
     unsigned cyc = (unsigned)(int)t;
@@ -107,7 +125,7 @@ static float lfo_at(unsigned shape, float t)
 }
 
 /* ---------------------------------------------------------- preparation */
-static void view_prepare(unsigned view)
+TP_SMALL static void view_prepare(unsigned view)
 {
     const struct tp_cooked_emitter *ce = &tp_cook.e[sel];
     const struct tp_cooked_fx *fx = &tp_cook.fx;
@@ -194,12 +212,24 @@ static void view_prepare(unsigned view)
         else if (fx->mod_type == 2) { base = 0.004f; depth = 0.0035f; }
         else { base = 0.012f; depth = 0.008f; }
         depth *= fx->mod_depth;
+        float ph = vfrac(vtime() * fx->mod_rate);
+        float d = base + depth * (0.5f + 0.5f * vsin1(ph));                 /* delay now (s) */
+        float g = fx->mod_type == 1 ? 0.55f + 0.4f * fx->mod_feedback : 0.7f;
         for (int i = 0; i < VW; ++i) {
-            float ph = 2.0f * (float)i / (float)VW;
-            plot_a[i] = (int16_t)vy((base + depth * (0.5f + 0.5f * vsin1(ph))) * 1000.0f, 0.0f, 21.0f, VY0 + 26, VY1 - 18);
-            plot_b[i] = (int16_t)vy((base + depth * (0.5f + 0.5f * vcos1(ph))) * 1000.0f, 0.0f, 21.0f, VY0 + 26, VY1 - 18);
+            float u = 2.0f * (float)i / (float)VW;
+            plot_b[i] = (int16_t)vy((base + depth * (0.5f + 0.5f * vsin1(u))) * 1000.0f, 0.0f, 21.0f, VY0 + 92, VY1 - 14);
+            plot_c[i] = (int16_t)vy((base + depth * (0.5f + 0.5f * vcos1(u))) * 1000.0f, 0.0f, 21.0f, VY0 + 92, VY1 - 14);
+            float v;
+            if (fx->mod_type == 2) v = vcos1(u) * 0.5f + 0.5f;               /* vibrato: pitch wobble */
+            else {
+                /* Comb filter of dry + delayed copy at today's delay: notches sweep with the LFO. */
+                float f = 3000.0f * (float)i / (float)VW;                 /* linear 0..3 kHz: clean teeth */
+                float m2 = 1.0f + g * g + 2.0f * g * vcos1(f * d);
+                v = vclamp(1.0f + 0.25f * 3.0103f * vlog2(m2 / ((1.0f + g) * (1.0f + g))) / 6.0f, 0.0f, 1.0f);
+            }
+            plot_a[i] = (int16_t)vy(v, 0.0f, 1.0f, VY0 + 24, VY0 + 80);
         }
-        view_f[0] = fx->mod_rate;
+        view_f[0] = fx->mod_rate; view_f[1] = ph; view_f[2] = d * 1000.0f;
         break;
     }
     case V_REVERB: {
@@ -211,8 +241,8 @@ static void view_prepare(unsigned view)
             float t = span * (float)i / (float)VW, env = vexp2(-9.966f * t / rt);
             float nl = 0.25f + 0.75f * vrand((uint32_t)i * 7919U), nr = 0.25f + 0.75f * vrand((uint32_t)i * 104729U + 3U);
             nr = nl + (nr - nl) * fx->rev_width;
-            plot_a[i] = (int16_t)(env * nl * 54.0f);
-            plot_b[i] = (int16_t)(env * nr * 54.0f);
+            plot_a[i] = (int16_t)(env * nl * 24.0f);
+            plot_b[i] = (int16_t)(env * nr * 24.0f);
         }
         break;
     }
@@ -229,7 +259,7 @@ static void view_prepare(unsigned view)
 }
 
 /* -------------------------------------------------------------- drawing */
-static void view_grain(void)
+TP_SMALL static void view_grain(void)
 {
     uint16_t ec = emitter_color[sel];
     curve(plot_a, VY0 + 8, VY0 + 58, VY0 + 58, ec);
@@ -249,7 +279,7 @@ static void view_grain(void)
         if (!plot_n && band_hits(VY0 + 100, VY0 + 110)) ctext(120, VY0 + 102, "DENSE CLOUD", 1, C_DIM);
     }
 }
-static void view_position(void)
+TP_SMALL static void view_position(void)
 {
     const struct tp_cooked_emitter *ce = &tp_cook.e[sel];
     uint16_t ec = emitter_color[sel];
@@ -290,7 +320,7 @@ static void view_position(void)
     gfx_vline(cx, cy + LH / 2 - sx, 2 * sx + 1, C_TEAL);
     if (ce->scan_cells_s != 0.0f) gfx_text(cx + (ce->scan_cells_s > 0 ? 4 : -16), cy + 2, ce->scan_cells_s > 0 ? ">>" : "<<", 1, C_AMBER);
 }
-static void view_pitch(void)
+TP_SMALL static void view_pitch(void)
 {
     const struct tp_cooked_emitter *ce = &tp_cook.e[sel];
     uint16_t ec = emitter_color[sel];
@@ -322,7 +352,7 @@ static void view_pitch(void)
         ctext(120, VY1 - 9, ce->quant >= 2 ? "SPRAY JUMPS OCTAVES" : ce->quant == 1 ? "SPRAY SNAPS TO SEMITONES" : "SPRAY IS SMOOTH", 1, C_DIM);
     }
 }
-static void view_env(void)
+TP_SMALL static void view_env(void)
 {
     uint16_t ec = emitter_color[sel];
     int base = VY1 - 22;
@@ -354,7 +384,7 @@ static void view_env(void)
         dot(VX0 + x, y, 3, C_TEXT);
     }
 }
-static void view_filter(void)
+TP_SMALL static void view_filter(void)
 {
     const struct tp_cooked_emitter *ce = &tp_cook.e[sel];
     uint16_t ec = emitter_color[sel];
@@ -381,7 +411,7 @@ static void view_filter(void)
         }
     }
 }
-static void view_lfo(void)
+TP_SMALL static void view_lfo(void)
 {
     const struct tp_cooked_emitter *ce = &tp_cook.e[sel];
     uint16_t ec = emitter_color[sel];
@@ -398,66 +428,169 @@ static void view_lfo(void)
         char b[16]; vnum(b, ce->lfo_rate, ce->lfo_rate < 10.0f ? 2 : 1, " HZ"); rtext(VX1, VY0 + 4, b, C_TEXT);
     }
 }
-static void view_sends(void)
+TP_SMALL static void view_sends(void)
 {
+    /* A patch bay: the emitter's cables run to three effect modules and,
+     * dry, straight to the output; pulses travel along each cable. */
     const struct tp_cooked_emitter *ce = &tp_cook.e[sel];
     uint16_t ec = emitter_color[sel];
-    static const char *const n[4] = {"MOD", "DELAY", "REVERB", "DRY"};
-    float v[4] = {ce->send_mod, ce->send_delay, ce->send_reverb, ce->dry};
-    for (unsigned i = 0; i < 4; ++i) {
-        int x = 22 + (int)i * 54;
-        if (band_hits(VY0 + 8, VY1 - 18)) vbar(x, VY0 + 10, VY1 - 22, 34, v[i], i == 3 ? C_TEXT : ec);
-        if (band_hits(VY1 - 18, VY1)) ctext(x + 17, VY1 - 16, n[i], 1, C_DIM);
+    static const char *const n[3] = {"MOD", "DELAY", "REVERB"};
+    static const uint16_t col[3] = {RGB(255, 176, 60), RGB(48, 214, 192), RGB(176, 140, 255)};
+    float v[3] = {ce->send_mod, ce->send_delay, ce->send_reverb};
+    float t = vtime();
+    const int ox = 38, oy = 96, mx = 112, mw = 98, jx = 226, jy = 162;
+    for (unsigned k = 0; k < 4; ++k) {
+        /* Cable: a curve from the orb to a module (or, dry, to the jack). */
+        float send = k < 3 ? v[k] : ce->dry;
+        uint16_t c = k < 3 ? col[k] : C_TEXT;
+        int ex = k < 3 ? mx : jx - 6, ey = k < 3 ? 44 + (int)k * 46 : jy;
+        int px = ox, py = oy;
+        uint16_t cc = gfx_mix(C_BG, c, (unsigned)(40.0f + 200.0f * send));
+        for (int s2 = 1; s2 <= 36; ++s2) {
+            float u = (float)s2 / 36.0f, a = (1 - u) * (1 - u) * (1 - u), b = 3 * (1 - u) * (1 - u) * u, cq = 3 * (1 - u) * u * u, d = u * u * u;
+            float c1x = k < 3 ? 76.0f : (float)ox, c1y = (float)oy + (k < 3 ? 0.0f : 60.0f), c2x = k < 3 ? 76.0f : 120.0f, c2y = (float)ey;
+            int x = (int)(a * ox + b * c1x + cq * c2x + d * ex), y = (int)(a * oy + b * c1y + cq * c2y + d * ey);
+            if (send > 0.01f || (s2 & 2)) seg(px, py, x, y, send > 0.5f ? 2 : 1, cc);
+            px = x; py = y;
+            if (send > 0.01f)
+                for (int q = 0; q < 2; ++q) {
+                    float pos = vfrac(t * (0.25f + 0.6f * send) + 0.5f * (float)q);
+                    if (pos >= u - 1.0f / 36.0f && pos < u) glow(x, y, gfx_mix(c, C_TEXT, 120));
+                }
+        }
+        if (k == 3) continue;
+        int y0 = 30 + (int)k * 46;
+        if (!band_hits(y0, y0 + 30)) continue;
+        gfx_rfill(mx, y0, mw, 30, 5, gfx_mix(C_BG, col[k], 46));
+        gfx_hline(mx + 4, y0 + 1, mw - 8, gfx_mix(col[k], C_TEXT, 70));
+        gfx_label(mx + 26, y0 + 5, n[k], col[k]);
+        char b[8]; vnum(b, v[k] * 100.0f, 0, "%"); gfx_label(mx + mw - 4 - gfx_label_width(b), y0 + 5, b, C_TEXT);
+        hbar(mx + 26, y0 + 20, mw - 32, 4, v[k], col[k]);
+        /* Module icon. */
+        for (int x = 0; x < 16; ++x) {
+            int yy = k == 0 ? (int)(5.0f * vsin1((float)x / 16.0f + t * 0.5f)) : 0;
+            if (k == 0) gfx_fill(mx + 5 + x, y0 + 15 + yy, 1, 2, col[k]);
+            else if (k == 1 && (x % 5) == 0) gfx_fill(mx + 5 + x, y0 + 8 + x / 2, 2, 14 - x / 2 * 2 + 2, col[k]);
+            else if (k == 2) gfx_fill(mx + 5 + x, y0 + 22 - (int)(12.0f * vexp2(-(float)x * 0.25f) * vrand((uint32_t)(x * 31) + (uint32_t)(t * 8.0f))), 1, 1, col[k]);
+        }
+        seg(mx + mw, y0 + 15, jx, y0 + 15, 1, gfx_mix(C_BG, col[k], 120));
     }
+    if (band_hits(30, jy + 8)) gfx_vline(jx, 45, jy - 45, C_GRIDL);
+    if (band_hits(oy - 14, oy + 14)) {
+        gfx_rfill(ox - 13, oy - 13, 27, 27, 6, ec);
+        gfx_rfill(ox - 8, oy - 10, 10, 6, 3, gfx_mix(ec, C_TEXT, 150));
+        char e[3] = {'E', (char)('1' + sel), 0}; ctext(ox, oy - 3, e, 1, C_BG);
+    }
+    if (band_hits(jy - 6, jy + 8)) { gfx_rfill(jx - 5, jy - 5, 11, 11, 3, C_TEXT); dot(jx, jy, 1, C_BG); gfx_label(jx - 32, jy - 3, "OUT", C_DIM); }
 }
-static void view_modfx(void)
+TP_SMALL static void view_modfx(void)
 {
     const struct tp_cooked_fx *fx = &tp_cook.fx;
-    int top = VY0 + 26, bot = VY1 - 18;
     if (band_hits(VY0, VY0 + 18)) {
         gfx_text(VX0, VY0, tempura_list_name(tempura_global_info(G_MOD_TYPE), fx->mod_type), 2, C_TEAL);
-        char b[16]; vnum(b, view_f[0], view_f[0] < 10.0f ? 2 : 1, " HZ"); rtext(VX1, VY0 + 4, b, C_TEXT);
+        char b[16]; vnum(b, view_f[2], 1, " MS"); rtext(VX1, VY0 + 4, b, C_TEXT);
     }
-    if (fx->mod_type != 2) curve(plot_b, top, bot, -1, C_AMBER);
-    curve(plot_a, top, bot, -1, C_TEAL);
-    if (band_hits(bot + 2, bot + 14)) {
-        gfx_text(VX0, bot + 6, fx->mod_type == 2 ? "DELAY TIME (MS)" : "DELAY TIME  L", 1, C_DIM);
-        if (fx->mod_type != 2) gfx_text(VX0 + 84, bot + 6, "R", 1, C_AMBER);
-        hbar(150, bot + 7, 74, 4, fx->mod_feedback / 0.9f, C_BEET);
+    /* Top: the comb filter (or vibrato's pitch wobble), moving with the LFO. */
+    curve(plot_a, VY0 + 24, VY0 + 80, VY0 + 80, fx->mod_type == 2 ? C_AMBER : C_TEAL);
+    if (band_hits(VY0 + 82, VY0 + 90)) { gfx_label(VX0, VY0 + 82, fx->mod_type == 2 ? "PITCH WOBBLE" : "COMB FILTER NOW", C_DIM); if (fx->mod_type != 2) gfx_label(VX1 - 22, VY0 + 82, "3K", C_DIM); }
+    /* Bottom: left and right delay sweeps with a live playhead. */
+    if (fx->mod_type != 2) curve(plot_c, VY0 + 92, VY1 - 14, -1, C_AMBER);
+    curve(plot_b, VY0 + 92, VY1 - 14, -1, C_TEAL);
+    int x = (int)(vfrac(view_f[1] * 0.5f + (float)((int)(vtime() * view_f[0]) & 1) * 0.5f) * (float)(VW - 1));
+    if (band_hits(VY0 + 90, VY1 - 12)) {
+        gfx_vline(VX0 + x, VY0 + 92, VY1 - 14 - (VY0 + 92), gfx_mix(C_BG, C_TEXT, 70));
+        glow(VX0 + x, plot_b[x], C_TEAL);
+        if (fx->mod_type != 2) glow(VX0 + x, plot_c[x], C_AMBER);
     }
+    if (band_hits(VY1 - 10, VY1)) { gfx_label(VX0, VY1 - 8, "SWEEP L", C_TEAL); if (fx->mod_type != 2) gfx_label(VX0 + 48, VY1 - 8, "R", C_AMBER); hbar(150, VY1 - 6, 74, 4, fx->mod_feedback / 0.9f, C_BEET); }
 }
-static void view_delay(void)
+TP_SMALL static void view_delay(void)
 {
     const struct tp_cooked_fx *fx = &tp_cook.fx;
     float dt = fx->dly_seconds, span = vclamp(dt * 9.0f, 0.4f, 7.0f);
-    int mid = (VY0 + VY1) / 2 + 2;
-    if (band_hits(mid - 60, mid + 62)) {
-        gfx_hline(VX0, mid, VW, C_GRIDL);
-        gfx_fill(VX0, mid - 50, 3, 101, C_DIM);   /* the dry sound */
-        float amp = 1.0f, keep = 0.55f + 0.45f * vnorm(canvas.g[G_DLY_TONE]);
-        int width = 2 + (int)((1.0f - keep) * 6.0f);
-        for (unsigned n = 1; n < 40; ++n) {
-            float t = dt * (float)n;
-            if (t > span || amp < 0.02f) break;
-            int x = VX0 + (int)(t / span * (float)VW), h = (int)(vsqrt(amp) * 50.0f);
-            uint16_t c = gfx_mix(C_BG, C_TEAL, (unsigned)(255.0f * vmax(0.25f, amp)));
-            if (!fx->ping) gfx_fill(x, mid - h, width, 2 * h + 1, c);
-            else if (n & 1U) gfx_fill(x, mid - h, width, h, c);
-            else gfx_fill(x, mid + 1, width, h, c);
-            amp *= fx->dly_feedback * keep;
+    int mid = (VY0 + VY1) / 2 + 4;
+    /* A ball bounces from echo to echo in real time; each echo flashes as it lands. */
+    float tp = vfrac(vtime() / (span * 1.15f)) * span * 1.15f;
+    float keep = 0.55f + 0.45f * vnorm(canvas.g[G_DLY_TONE]);
+    int width = 4 + (int)((1.0f - keep) * 6.0f);
+    int prev_x = VX0, prev_y = mid - 50, ball_x = -1, ball_y = 0;
+    if (band_hits(mid - 62, mid + 62)) { gfx_hline(VX0, mid, VW, C_GRIDL); gfx_rfill(VX0, mid - 50, 4, 101, 1, C_DIM); }
+    float amp = 1.0f;
+    for (unsigned n = 1; n < 40; ++n) {
+        float t = dt * (float)n;
+        if (t > span || amp < 0.02f) break;
+        int x = VX0 + (int)(t / span * (float)VW), h = (int)(vsqrt(amp) * 50.0f);
+        float flash = tp >= t ? vclamp(1.0f - (tp - t) * 6.0f, 0.0f, 1.0f) : 0.0f;
+        uint16_t c = gfx_mix(gfx_mix(C_BG, C_TEAL, (unsigned)(255.0f * vmax(0.25f, amp))), C_TEXT, (unsigned)(flash * 200.0f));
+        int hh = h + (int)(flash * 6.0f), down = fx->ping && !(n & 1U);
+        int y = down ? mid + hh : mid - hh;
+        if (band_hits(mid - 62, mid + 62)) {
+            if (!fx->ping) gfx_rfill(x, mid - hh, width, 2 * hh + 1, 1, c);
+            else if (!down) gfx_rfill(x, mid - hh, width, hh, 1, c);
+            else gfx_rfill(x, mid + 1, width, hh, 1, c);
+            if (flash > 0.0f) glow(x + width / 2, y, C_TEXT);
         }
-        if (fx->ping) { gfx_text(VX1 - 6, mid - 58, "L", 1, C_DIM); gfx_text(VX1 - 6, mid + 52, "R", 1, C_DIM); }
+        /* The arc from the previous echo to this one. */
+        int lift = fx->ping ? 0 : 18;
+        int ax = prev_x, ay = prev_y;
+        for (int k = 1; k <= 16; ++k) {
+            float u = (float)k / 16.0f;
+            int bx = prev_x + (int)((float)(x - prev_x) * u), by = prev_y + (int)((float)(y - prev_y) * u) - (int)((float)lift * 4.0f * u * (1.0f - u));
+            if (k & 1) seg(ax, ay, bx, by, 1, gfx_mix(C_BG, C_TEAL, 70));
+            ax = bx; ay = by;
+        }
+        float t0 = dt * (float)(n - 1);
+        if (tp >= t0 && tp < t) {
+            float u = (tp - t0) / dt;
+            ball_x = prev_x + (int)((float)(x - prev_x) * u);
+            ball_y = prev_y + (int)((float)(y - prev_y) * u) - (int)((float)lift * 4.0f * u * (1.0f - u));
+        }
+        prev_x = x + width / 2; prev_y = y;
+        amp *= fx->dly_feedback * keep;
     }
+    if (ball_x >= 0) glow(ball_x, ball_y, C_TEXT);
+    if (fx->ping && band_hits(mid - 62, mid + 62)) { gfx_text(VX1 - 6, mid - 58, "L", 1, C_DIM); gfx_text(VX1 - 6, mid + 52, "R", 1, C_DIM); }
     if (band_hits(VY0, VY0 + 10)) {
         char b[16]; seconds_label(b, dt);
         gfx_text(VX0, VY0, "ECHO EVERY", 1, C_DIM); gfx_text(VX0 + 66, VY0, b, 1, C_TEXT);
     }
 }
-static void view_reverb(void)
+TP_SMALL static void view_reverb(void)
 {
     const struct tp_cooked_fx *fx = &tp_cook.fx;
-    int mid = (VY0 + VY1) / 2 + 4;
-    if (band_hits(mid - 58, mid + 58)) {
+    /* A room in perspective, sized by the decay, with sound rings spreading
+     * from a source on the floor and fading with the damping. */
+    float rt = view_f[0], size = vclamp(vlog2(rt * (1.0f / 0.3f)) * 0.2f, 0.0f, 1.0f);   /* 0.3 s .. 10 s */
+    int fx0 = VX0, fx1 = VX1, fy0 = VY0 + 12, fy1 = VY0 + 92;
+    int bw = 150 - (int)(104.0f * size), bh = 62 - (int)(42.0f * size);      /* longer decay: deeper room */
+    int bx0 = 120 - bw / 2, bx1 = 120 + bw / 2, by0 = 56 - bh / 2, by1 = 56 + bh / 2;
+    uint16_t wall = RGB(70, 52, 104);
+    if (band_hits(fy0, fy1 + 1)) {
+        gfx_vgrad(bx0, by1, bw, 1, wall, wall);
+        for (int y = by1; y < fy1; ++y) {   /* floor, lighter towards the front */
+            int l = bx0 - (bx0 - fx0) * (y - by1) / (fy1 - by1), r = bx1 + (fx1 - bx1) * (y - by1) / (fy1 - by1);
+            if (y >= gfx_top && y < gfx_top + GFX_BAND) gfx_fill(l, y, r - l, 1, gfx_mix(RGB(14, 8, 22), RGB(40, 26, 58), (unsigned)((y - by1) * 255 / (fy1 - by1))));
+        }
+        gfx_rect(bx0, by0, bw, bh, wall);
+        seg(fx0, fy0, bx0, by0, 1, wall); seg(fx1 - 1, fy0, bx1, by0, 1, wall);
+        seg(fx0, fy1, bx0, by1, 1, wall); seg(fx1 - 1, fy1, bx1, by1, 1, wall);
+        float t = vtime();
+        for (unsigned k = 0; k < 5; ++k) {
+            float ph = vfrac(t * (0.35f + 0.25f / rt) + (float)k * 0.2f);
+            float r = ph * 104.0f, fade = (1.0f - ph);
+            fade *= fade * (1.0f - 0.7f * fx->rev_damp * ph);
+            uint16_t c = gfx_mix(C_BG, gfx_mix(RGB(150, 110, 240), RGB(250, 235, 255), (unsigned)(255.0f * (1.0f - ph))), (unsigned)(255.0f * vsqrt(fade)));
+            for (int a = 0; a < 48; ++a) {
+                float u = (float)a / 48.0f;
+                int x = 120 + (int)(r * vcos1(u)), y = 76 + (int)(r * 0.32f * vsin1(u));
+                if (x > fx0 && x < fx1 - 1 && y > fy0 && y < fy1) gfx_fill(x, y, 2, 1, c);
+            }
+        }
+        glow(120, 76, C_AMBER);
+    }
+    /* The tail below. */
+    int mid = VY1 - 32;
+    if (band_hits(mid - 28, mid + 28)) {
         for (int i = 0; i < VW; ++i) {
             unsigned fade = (unsigned)(255.0f * (1.0f - fx->rev_damp * 1.6f * (float)i / (float)VW));
             uint16_t c = gfx_mix(RGB(60, 40, 90), RGB(200, 170, 255), fade);
@@ -467,12 +600,12 @@ static void view_reverb(void)
         gfx_hline(VX0, mid, VW, C_GRIDL);
     }
     if (band_hits(VY0, VY0 + 10)) {
-        char b[16]; seconds_label(b, view_f[0]);
+        char b[16]; seconds_label(b, rt);
         gfx_text(VX0, VY0, "DECAY", 1, C_DIM); gfx_text(VX0 + 36, VY0, b, 1, C_TEXT);
         rtext(VX1, VY0, fx->rev_width > 0.5f ? "WIDE" : "NARROW", C_DIM);
     }
 }
-static void view_track(void)
+TP_SMALL static void view_track(void)
 {
     const struct tp_cooked_track *tr = &tp_cook.t[cur_x];
     int16_t src = canvas.tr[cur_x][TR_SOURCE];
@@ -501,7 +634,7 @@ static void view_track(void)
         if (tr->reverse) ctext(120, top, "<< REVERSED", 1, C_AMBER);
     }
 }
-static void view_arp(void)
+TP_SMALL static void view_arp(void)
 {
     uint16_t ec = emitter_color[sel];
     unsigned on = canvas.g[G_ARP_ON] != 0;
@@ -539,7 +672,7 @@ static void view_arp(void)
     }
 }
 
-static void draw_view(unsigned view)
+TP_SMALL static void draw_view(unsigned view)
 {
     if (gfx_top + GFX_BAND <= GY - 2 || gfx_top >= PANEL_Y - 2) return;
     gfx_vgrad(0, GY - 2, GFX_W, PANEL_Y - GY, RGB(6, 3, 9), RGB(22, 9, 24));

@@ -5,6 +5,9 @@
 #ifndef TEMPURA_GFX_H
 #define TEMPURA_GFX_H
 #include <stdint.h>
+#ifndef TP_SMALL
+#define TP_SMALL __attribute__((minsize))
+#endif
 
 #define RGB(r, g, b) ((uint16_t)((((r) >> 3) << 11) | (((g) >> 2) << 5) | ((b) >> 3)))
 enum { GFX_W = 240, GFX_H = 240, GFX_BAND = 8, GFX_BANDS = GFX_H / GFX_BAND };

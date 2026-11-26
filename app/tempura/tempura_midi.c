@@ -11,7 +11,8 @@
  * Program change 0-7 loads canvases 1-8. MIDI clock sets the delay tempo.
  */
 /* Control-task code: optimise for size (the FM-1 app area is about 444 KB). */
-#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
+/* Size-optimised: TP_SMALL on each function (the FM-1's clang 4 has no
+ * "#pragma clang attribute", which earlier builds relied on). */
 #include "tempura.h"
 #include "tempura_dsp.h"
 #include <string.h>
@@ -23,7 +24,7 @@ static volatile unsigned q_write, q_read;
 static uint32_t clock_last, clock_period_q8, activity_until;
 static unsigned clock_count, clock_bpm;
 
-void tempura_midi_in(unsigned source, const uint8_t *m, size_t n)
+TP_SMALL void tempura_midi_in(unsigned source, const uint8_t *m, size_t n)
 {
     if (!m || !n || n > 3 || m[0] < 0x80) return;
     if (m[0] == 0xfe) return; /* active sensing */
@@ -44,7 +45,7 @@ static const struct { uint8_t cc, param; } cc_map[] = {
     {91, EP_SEND_REVERB}, {93, EP_SEND_MOD}, {94, EP_SEND_DELAY},
 };
 
-static void clock_tick(uint32_t at)
+TP_SMALL static void clock_tick(uint32_t at)
 {
     uint32_t d = at - clock_last;
     clock_last = at;
@@ -54,14 +55,14 @@ static void clock_tick(uint32_t at)
     clock_period_q8 = clock_count < 4 ? q8 : clock_period_q8 + ((int32_t)(q8 - clock_period_q8) >> 3);
     if (++clock_count >= 24 && clock_period_q8) clock_bpm = (60000U * 256U) / (clock_period_q8 * 24U);
 }
-unsigned tempura_midi_clock_bpm(void)
+TP_SMALL unsigned tempura_midi_clock_bpm(void)
 {
     if (clock_count < 24 || fm1_millis() - clock_last > 1000U) return 0;
     return clock_bpm;
 }
-unsigned tempura_midi_activity(void) { return (int32_t)(fm1_millis() - activity_until) < 0; }
+TP_SMALL unsigned tempura_midi_activity(void) { return (int32_t)(fm1_millis() - activity_until) < 0; }
 
-void tempura_midi_poll(struct tp_canvas *c)
+TP_SMALL void tempura_midi_poll(struct tp_canvas *c)
 {
     unsigned tempo_before = tempura_midi_clock_bpm();
     while (q_read != q_write) {
@@ -118,7 +119,7 @@ void tempura_midi_poll(struct tp_canvas *c)
     if (tempura_midi_clock_bpm() != tempo_before) tempura_ui_touch();
 }
 
-void tempura_midi_key_out(const uint8_t *m, unsigned n)
+TP_SMALL void tempura_midi_key_out(const uint8_t *m, unsigned n)
 {
     struct tp_canvas *c = tempura_canvas();
     unsigned ports = (unsigned)c->g[G_KEY_OUT];
@@ -126,4 +127,3 @@ void tempura_midi_key_out(const uint8_t *m, unsigned n)
     if ((ports & 2U) && (fm1_midi_ready_ports() & (1U << FM1_MIDI_BLE))) (void)fm1_midi_send_port(FM1_MIDI_BLE, m, n);
 }
 
-#pragma clang attribute pop

@@ -37,13 +37,17 @@
     async close() { this.connection = 'closed'; return this; }
     send(bytes) { if (!this.dev.plugged) throw new DOMException('gone', 'InvalidStateError'); const b = Uint8Array.from(bytes); setTimeout(() => this.dev.receive(b), 0); }
   }
-  const access = new EventTarget();
-  access.inputs = new Map(); access.outputs = new Map();
-  const refresh = () => {
-    access.inputs.clear(); access.outputs.clear();
-    for (const d of T.devices) { access.inputs.set(d.in.id, d.in); access.outputs.set(d.out.id, d.out); }
+  // T.opts.android: like Chrome on Android, an access object only lists the
+  // devices present when it was requested; a device that re-enumerates (the
+  // FM-1 restarting into its loader) shows up only in a fresh access.
+  const accesses = [];
+  const fill = acc => { acc.inputs.clear(); acc.outputs.clear(); for (const d of T.devices) if (d.plugged) { acc.inputs.set(d.in.id, d.in); acc.outputs.set(d.out.id, d.out); } };
+  const refresh = () => { for (const acc of (T.opts.android ? [] : accesses)) fill(acc); };
+  navigator.requestMIDIAccess = async () => {
+    const acc = new EventTarget(); acc.inputs = new Map(); acc.outputs = new Map(); fill(acc); accesses.push(acc);
+    if (!T.opts.android) { accesses.length = 0; accesses.push(acc); }
+    return acc;
   };
-  navigator.requestMIDIAccess = async () => { refresh(); return access; };
 
   class Device {
     constructor(id, opts = {}) {
@@ -60,6 +64,7 @@
     request(addr, n) { this.seq = (this.seq + 1) & 255; this.reply(48, [this.seq, addr & 255, (addr >>> 8) & 255, (addr >>> 16) & 255, (addr >>> 24) & 255, n & 255, (n >>> 8) & 255, (n >>> 16) & 255]); }
     restart(mode, delay = 800) {
       this.plugged = false; this.in.dispatchEvent(new Event('statechange'));
+      if (T.opts.android) for (const acc of accesses) { acc.inputs.delete(this.in.id); acc.outputs.delete(this.out.id); }
       T.log.push('restart->' + mode);
       setTimeout(() => { this.mode = mode; this.plugged = true; refresh(); }, delay);
     }

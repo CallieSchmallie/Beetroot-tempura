@@ -8,6 +8,10 @@
 #include "fm1.h"
 
 #define TP_AUDIO FM1_AUDIO_CODE
+/* Optimise one function for size (control-task code, effects). */
+#ifndef TP_SMALL
+#define TP_SMALL __attribute__((minsize))
+#endif
 #define TP_INLINE static inline __attribute__((always_inline))
 #define TP_PI 3.14159265f
 

@@ -53,11 +53,11 @@ what its knobs change, drawn from the engine's own values:
 | ENV | The ADSR curve with times, and a dot that follows the sound. |
 | LFO · FILTER | The filter's frequency response, and where the envelope sweeps it. |
 | LFO · LFO | Two cycles of the wave at its depth, its destination, and a moving playhead. |
-| FX · SENDS | The four send levels. |
-| FX · MODULATION | The chorus/flanger/vibrato delay sweep for left and right. |
-| FX · DELAY | The echo train (left above, right below in ping-pong). |
+| FX · SENDS | A patch bay: cables from the emitter to the MOD, DELAY and REVERB modules and, dry, to the output, lit by their send levels, with pulses running along them. |
+| FX · MODULATION | The comb filter the chorus or flanger makes right now (0–3 kHz), its notches moving with the LFO; vibrato shows its pitch wobble. Below, the left and right delay sweeps with a live playhead. |
+| FX · DELAY | The echo train (left above, right below in ping-pong), with a ball bouncing from echo to echo in real time and each echo flashing as it lands. |
 | FX · DELAY+MOD | The echo train, as on DELAY. |
-| FX · REVERB | The reverb tail with its decay time. |
+| FX · REVERB | A room that deepens with the decay time, sound rings spreading from a source and fading with the damping, and the tail below. |
 | SCL | The track's waveform with start and end, live grains, tune, level and pan. |
 | ARP | The step pattern, with gate, swing, accents and the step now playing. |
 

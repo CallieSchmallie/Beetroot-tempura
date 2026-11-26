@@ -5,7 +5,8 @@
 #include "tempura_internal.h"
 /* Optimised for size: about 3 KB smaller for ~5 % more effect time, which
  * the FM-1's app area needs and the CPU budget absorbs. */
-#pragma clang attribute push (__attribute__((minsize)), apply_to = function)
+/* Size-optimised: TP_SMALL on each function (the FM-1's clang 4 has no
+ * "#pragma clang attribute", which earlier builds relied on). */
 #include <stdlib.h>
 #include <string.h>
 
@@ -39,12 +40,12 @@ static int16_t *rev_mem;
 static struct { int16_t *buf; uint16_t len, pos; float store; } comb[2][COMBS];
 static struct { int16_t *buf; uint16_t len, pos; } ap[2][ALLPASSES];
 
-void tp_fx_init(void)
+TP_SMALL void tp_fx_init(void)
 {
     memset(mod_line, 0, sizeof mod_line);
     mod_write = 0; mod_phase = 0;
 }
-void tp_fx_allocate(void)
+TP_SMALL void tp_fx_allocate(void)
 {
     if (!rev_mem) {
         int16_t *mem = tp_alloc_reserved(REV_SAMPLES * sizeof(int16_t));
@@ -77,12 +78,12 @@ void tp_fx_allocate(void)
         }
     }
 }
-void tp_fx_heap(uint32_t *delay_bytes, uint32_t *reverb_bytes)
+TP_SMALL void tp_fx_heap(uint32_t *delay_bytes, uint32_t *reverb_bytes)
 {
     *delay_bytes = dly ? dly_len * 4U : 0;
     *reverb_bytes = rev_mem ? (uint32_t)(REV_SAMPLES * sizeof(int16_t)) : 0;
 }
-TP_AUDIO void tp_fx_clear(void)
+TP_SMALL TP_AUDIO void tp_fx_clear(void)
 {
     for (unsigned i = 0; i < MOD_LEN; ++i) mod_line[i] = 0;
     if (dly) for (uint32_t i = 0; i < dly_len * 2U; ++i) dly[i] = 0;
@@ -95,7 +96,7 @@ TP_AUDIO void tp_fx_clear(void)
 }
 
 
-static TP_AUDIO void modulation(const float *in_l, const float *in_r, float *out_l, float *out_r, unsigned n)
+TP_SMALL static TP_AUDIO void modulation(const float *in_l, const float *in_r, float *out_l, float *out_r, unsigned n)
 {
     const struct tp_cooked_fx *f = &tp_cook.fx;
     if (f->mod_return <= 0.0f) return;
@@ -127,7 +128,7 @@ static TP_AUDIO void modulation(const float *in_l, const float *in_r, float *out
     mod_fb_l = tp_flush(mod_fb_l); mod_fb_r = tp_flush(mod_fb_r);
 }
 
-static TP_AUDIO void delay(const float *in_l, const float *in_r, float *out_l, float *out_r, unsigned n)
+TP_SMALL static TP_AUDIO void delay(const float *in_l, const float *in_r, float *out_l, float *out_r, unsigned n)
 {
     const struct tp_cooked_fx *f = &tp_cook.fx;
     if (!dly || f->dly_return <= 0.0f) return;
@@ -165,7 +166,7 @@ static TP_AUDIO void delay(const float *in_l, const float *in_r, float *out_l, f
     dly_lp_l = tp_flush(dly_lp_l); dly_lp_r = tp_flush(dly_lp_r);
 }
 
-static TP_AUDIO void reverb(const float *in_l, const float *in_r, float *out_l, float *out_r, unsigned n)
+TP_SMALL static TP_AUDIO void reverb(const float *in_l, const float *in_r, float *out_l, float *out_r, unsigned n)
 {
     const struct tp_cooked_fx *f = &tp_cook.fx;
     if (!rev_mem || f->rev_return <= 0.0f) return;
@@ -212,4 +213,3 @@ TP_AUDIO void tp_fx_render(float *mod_l, float *mod_r, float *dly_l, float *dly_
     delay(dly_l, dly_r, out_l, out_r, frames);
     reverb(rev_l, rev_r, out_l, out_r, frames);
 }
-#pragma clang attribute pop

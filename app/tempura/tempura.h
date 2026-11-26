@@ -11,6 +11,12 @@
 #ifndef TEMPURA_H
 #define TEMPURA_H
 #include <stdint.h>
+
+/* Optimise one function for size (control-task code). Applied per function:
+ * the FM-1's clang 4.0.1 has no "#pragma clang attribute". */
+#ifndef TP_SMALL
+#define TP_SMALL __attribute__((minsize))
+#endif
 #include <stddef.h>
 #include "fm1.h"
 
