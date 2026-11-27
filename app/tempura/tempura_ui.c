@@ -747,7 +747,7 @@ TP_SMALL static void draw(void)
     }
 }
 
-/* ---- splash: a lit, battered beetroot, drawn per pixel ---- */
+/* ---- splash: a lit, very handsome beetroot, drawn per pixel ---- */
 TP_SMALL static float sp_hash(int x, int y)
 {
     uint32_t h = (uint32_t)x * 374761393U + (uint32_t)y * 668265263U;
@@ -795,6 +795,63 @@ TP_SMALL static int sp_leaf(int x, int y, float *r, float *g, float *b)
     }
     return hit;
 }
+/* A thick line for the face, drawn as small squares. */
+TP_SMALL static void sp_line(int x0, int y0, int x1, int y1, int t, uint16_t c)
+{
+    int dx = x1 - x0, dy = y1 - y0, n = (dx < 0 ? -dx : dx) > (dy < 0 ? -dy : dy) ? (dx < 0 ? -dx : dx) : (dy < 0 ? -dy : dy);
+    for (int i = 0; i <= n; ++i) gfx_fill(x0 + (n ? dx * i / n : 0), y0 + (n ? dy * i / n : 0), t, t, c);
+}
+/* The beet's face (an original design): smouldering half-lidded eyes under
+ * heavy brows, cheekbones, a chiselled jaw with a cleft chin, a knowing
+ * smirk, and the obligatory glint. */
+TP_SMALL static void sp_face(void)
+{
+    const uint16_t ink = RGB(26, 0, 10), shade = RGB(70, 4, 32), lite = RGB(236, 104, 160);
+    for (int side = -1; side <= 1; side += 2) {
+        int ex = BEET_X + side * 12, ey = BEET_Y - 6;
+        /* Eye: white almond, green iris low in it, heavy upper lid. */
+        for (int dy = -3; dy <= 3; ++dy)
+            for (int dx = -6; dx <= 6; ++dx)
+                if (dx * dx * 9 + dy * dy * 36 <= 324) gfx_fill(ex + dx, ey + dy, 1, 1, RGB(250, 232, 238));
+        gfx_fill(ex - 2 + side, ey - 1, 5, 4, RGB(34, 120, 64));
+        gfx_fill(ex - 1 + side, ey, 3, 2, RGB(8, 30, 14));
+        gfx_fill(ex + side, ey - 1, 1, 1, C_TEXT);
+        sp_line(ex - 7, ey - 1, ex + 7, ey - 1, 1, ink);          /* half-lidded */
+        sp_line(ex - 7, ey - 2, ex + 7, ey - 2, 1, ink);
+        for (int dx = -6; dx <= 6; ++dx) gfx_fill(ex + dx, ey - 3 - (dx * dx < 16), 1, 1, shade);
+        sp_line(ex - 6, ey + 4, ex + 5, ey + 4, 1, shade);         /* lower lid */
+        /* Brow: thick, low and confident, rising towards the middle. */
+        sp_line(ex - side * 5, ey - 6, ex + side * 8, ey - 8, 1, lite);   /* light under the brow */
+        sp_line(ex - side * 5, ey - 10, ex + side * 8, ey - 12, 3, ink);
+        /* Cheekbone. */
+        sp_line(ex + side * 3, ey + 8, ex + side * 9, ey + 14, 1, shade);
+        sp_line(ex + side * 3, ey + 7, ex + side * 9, ey + 13, 1, gfx_mix(lite, C_BG, 60));
+    }
+    /* Nose: a straight ridge with a shadow under it. */
+    sp_line(BEET_X, BEET_Y - 4, BEET_X + 1, BEET_Y + 4, 1, lite);
+    sp_line(BEET_X + 1, BEET_Y - 4, BEET_X + 2, BEET_Y + 4, 1, shade);
+    sp_line(BEET_X - 2, BEET_Y + 6, BEET_X + 4, BEET_Y + 6, 1, ink);
+    /* Smirk: one corner up. */
+    for (int dx = -9; dx <= 11; ++dx) {
+        int y = BEET_Y + 14 - (dx > 1 ? (dx - 1) * (dx - 1) / 9 : 0) + (dx < -6 ? 1 : 0);
+        gfx_fill(BEET_X + dx, y, 1, 2, ink);
+        if (dx > -7 && dx < 6) gfx_fill(BEET_X + dx, y + 3, 1, 1, lite);   /* lower-lip light */
+    }
+    sp_line(BEET_X + 12, BEET_Y + 2, BEET_X + 13, BEET_Y + 6, 1, ink);   /* smile line at the raised corner */
+    /* Chiselled jaw and cleft chin. */
+    sp_line(BEET_X - 20, BEET_Y + 12, BEET_X - 9, BEET_Y + 23, 1, shade);
+    sp_line(BEET_X + 20, BEET_Y + 12, BEET_X + 9, BEET_Y + 23, 1, shade);
+    sp_line(BEET_X - 1, BEET_Y + 21, BEET_X - 1, BEET_Y + 25, 1, ink);
+    sp_line(BEET_X, BEET_Y + 21, BEET_X, BEET_Y + 25, 1, gfx_mix(lite, C_BG, 80));
+    /* The glint off the smile. */
+    int gx = BEET_X + 14, gy = BEET_Y + 9;
+    for (int k = 1; k < 6; ++k) {
+        unsigned a = (unsigned)(255 - k * 40);
+        gfx_blend(gx + k, gy, C_TEXT, a); gfx_blend(gx - k, gy, C_TEXT, a);
+        gfx_blend(gx, gy + k, C_TEXT, a); gfx_blend(gx, gy - k, C_TEXT, a);
+    }
+    gfx_fill(gx, gy, 1, 1, C_TEXT);
+}
 TP_SMALL static void boot_splash(void)
 {
     for (int y = gfx_top; y < gfx_top + GFX_BAND; ++y) {
@@ -822,29 +879,12 @@ TP_SMALL static void boot_splash(void)
             else if (v <= 0.3f) w = sp_sqrt(1.0f - v * v);
             else { float t = (1.75f - v) * (1.0f / 1.45f); w = 0.954f * t * sp_sqrt(t); }
             float au = u < 0 ? -u : u;
-            float edge = 0.40f + 0.06f * sp_sin(u * 2.1f) + 0.06f * sp_hash(x >> 2, 7);   /* where the batter starts */
-            int battered = v > edge && v < 1.5f;
-            float wb = battered ? w + 0.07f + 0.05f * sp_hash(x >> 1, y >> 1) : w;   /* crumbs widen the outline */
-            if (w > 0.0f && au < wb) {
-                float nx = au < w ? u / w : (u < 0 ? -1.0f : 1.0f), ny = v < 0.3f ? v : 0.3f;
+            if (w > 0.0f && au < w) {
+                float nx = u / w, ny = v < 0.3f ? v : 0.3f;
                 float nz = sp_sqrt(1.0f - nx * nx) * sp_sqrt(1.0f - ny * ny);
                 float diff = -0.55f * nx - 0.55f * ny + 0.63f * nz;
                 diff = diff < 0.0f ? 0.0f : diff;
-                if (battered) {
-                    /* Tempura: golden, lumpy, with bright crisp bits and dark pits. */
-                    /* Lumps: two crossed ripples, lit from the upper left. */
-                    float fx = (float)x, fy = (float)y;
-                    float h0 = sp_sin(fx * 0.085f + sp_sin(fy * 0.05f) * 0.3f) * sp_sin(fy * 0.09f + sp_sin(fx * 0.04f) * 0.3f);
-                    float h1 = sp_sin((fx - 1.5f) * 0.085f + sp_sin((fy - 1.5f) * 0.05f) * 0.3f) * sp_sin((fy - 1.5f) * 0.09f + sp_sin((fx - 1.5f) * 0.04f) * 0.3f);
-                    h0 = h0 < 0 ? -h0 : h0; h1 = h1 < 0 ? -h1 : h1;   /* every lump bulges out */
-                    float lump = (h0 - h1) * 1.6f;          /* facing the light (upper left) */
-                    float n = sp_hash(x, y + 77);
-                    float l = 0.42f + 0.45f * diff + lump * 0.30f + 0.18f * h0 + 0.08f * (n - 0.5f);
-                    if (v < edge + 0.05f) l *= 0.7f;
-                    r = 1.05f * l; g = 0.68f * l; b = 0.22f * l;
-                    if (lump > 0.25f && n > 0.55f) { r += 0.22f; g += 0.20f; b += 0.14f; }   /* crisp glints */
-                    if (h0 < 0.08f) { r *= 0.7f; g *= 0.65f; b *= 0.6f; }                  /* creases between lumps */
-                } else {
+                {
                     float ring = 1.0f - 0.07f * sp_sin(v * 4.2f + 0.3f * sp_sin(u * 0.5f));
                     float l = (0.25f + 0.80f * diff) * ring;
                     r = 0.80f * l; g = 0.07f * l; b = 0.32f * l;
@@ -856,7 +896,7 @@ TP_SMALL static void boot_splash(void)
                     if (w - au < 0.05f) { r *= 0.55f; g *= 0.5f; b *= 0.55f; }
                 }
             }
-            /* The root tail pokes out of the batter. */
+            /* The root tail. */
             if (y >= BEET_Y + 50 && y < BEET_Y + 74) {
                 int t = y - (BEET_Y + 50);
                 int rx = BEET_X + (int)(4.0f * sp_sin((float)t * 0.045f));
@@ -865,6 +905,7 @@ TP_SMALL static void boot_splash(void)
             row[x] = sp_rgb(r, g, b);
         }
     }
+    sp_face();
     int tw = gfx_title_width("BEETROOT", GFX_BOLD | GFX_ITALIC);
     gfx_title(120 - tw / 2, 170, "BEETROOT", RGB(255, 140, 190), RGB(190, 20, 84), GFX_BOLD | GFX_ITALIC | GFX_SHADOW);
     tw = gfx_title_width("TEMPURA", GFX_BOLD | GFX_ITALIC);
