@@ -137,8 +137,10 @@ __SEA5__
 <script>
 /* Keep the screen on while writing: a phone that sleeps mid-update stops
  * serving the FM-1, which then waits in update mode until Install is pressed again. */
+const FEATURES = __FEATURES__;   /* the plain test page turns these off */
 let wake = null;
 async function stayAwake(on) {
+  if (!FEATURES.wake) return;
   try {
     if (on && 'wakeLock' in navigator && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); }
     if (!on && wake) { await wake.release(); wake = null; }
@@ -276,7 +278,7 @@ async function doConnect() {
      * MIDI access lets the updater find it again, but asking for one resets an
      * open USB MIDI connection on Android, so only ask while the FM-1 is gone. */
     clearInterval(refresher);
-    refresher = setInterval(async () => {
+    if (FEATURES.refresh) refresher = setInterval(async () => {
       if (!updater || (updater.link && !updater.link.lost)) return;   /* connected: never disturb it */
       try { const fresh = await navigator.requestMIDIAccess({ sysex: true }); if (fresh && updater && (!updater.link || updater.link.lost)) { access = fresh; updater.access = fresh; } } catch (e) { /* keep the old access */ }
     }, 3000);
