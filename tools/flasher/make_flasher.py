@@ -11,6 +11,7 @@ import argparse, base64, json, pathlib
 root = pathlib.Path(__file__).resolve().parents[2]
 ap = argparse.ArgumentParser()
 ap.add_argument('--firmware'); ap.add_argument('--identity')
+ap.add_argument('--stamp', default='local', help='page version shown at the bottom (the git commit)')
 ap.add_argument('--notice', help='HTML that replaces the news notice (for test pages)')
 ap.add_argument('--out', default=str(root / 'tools/flasher/beetroot-tempura-flasher.html'))
 a = ap.parse_args()
@@ -35,5 +36,5 @@ if a.firmware:
                            'identity': {'build_id': ident['build_id'], 'release_version': ident.get('release_version', '')},
                            'fwsc': base64.b64encode(fw).decode()})
 out = pathlib.Path(a.out); out.parent.mkdir(parents=True, exist_ok=True)
-out.write_text(page.replace('__WEBUPDATE__', code).replace('__SAMPLES__', samples).replace('__EMBEDDED__', embedded).replace('__LIBRARY__', library).replace('__DQT__', dqt).replace('__SEA5__', sea5), encoding='utf-8')
+out.write_text(page.replace('__WEBUPDATE__', code).replace('__SAMPLES__', samples).replace('__EMBEDDED__', embedded).replace('__LIBRARY__', library).replace('__DQT__', dqt).replace('__SEA5__', sea5).replace('__STAMP__', a.stamp[:7]), encoding='utf-8')
 print(out)

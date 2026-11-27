@@ -415,5 +415,6 @@ $('flash').addEventListener('click', async () => {
 });
 })();
 </script>
+<p style="text-align:center;opacity:.55;font-size:12px;margin:24px 0">Flasher page version __STAMP__</p>
 </body>
 </html>
