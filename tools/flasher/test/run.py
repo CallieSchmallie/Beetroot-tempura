@@ -59,6 +59,17 @@ with sync_playwright() as p:
     check('Android: finds the update loader after the restart and completes', 'Done.' in done, done + ' | ' + str(page.evaluate('() => window.__fm1.log')))
     page.context.close()
 
+    # 1c. Android with a realistic loader start-up (6 s): asking for MIDI
+    #     access must never happen while the FM-1 is connected.
+    page = fresh([{}])
+    page.evaluate('() => { window.__fm1.opts.android = true; window.__fm1.opts.disruptive = true; window.__fm1.opts.prepareMs = 6000; }')
+    connect(page); tick(page); page.wait_for_timeout(5000)
+    page.evaluate("() => document.getElementById('m4').textContent = ''"); page.click('#flash')
+    done = wait_text(page, 'm4', r'Done\.|update mode|not visible|old firmware|Nothing was changed', 300)
+    log = page.evaluate('() => window.__fm1.log')
+    check('Android: connection never reset mid-update; install completes', 'Done.' in done and not any('connection reset' in l for l in log), done + ' | ' + str(log))
+    page.context.close()
+
     # 2. Cable pulled at 40 % of the write, device stays in update mode.
     page = fresh([{}])
     connect(page); tick(page)

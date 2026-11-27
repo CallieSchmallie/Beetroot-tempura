@@ -44,6 +44,14 @@
   const fill = acc => { acc.inputs.clear(); acc.outputs.clear(); for (const d of T.devices) if (d.plugged) { acc.inputs.set(d.in.id, d.in); acc.outputs.set(d.out.id, d.out); } };
   const refresh = () => { for (const acc of (T.opts.android ? [] : accesses)) fill(acc); };
   navigator.requestMIDIAccess = async () => {
+    // T.opts.disruptive: like Chrome on Android, asking for MIDI access resets
+    // open USB MIDI connections; an update that is starting is abandoned and
+    // the FM-1 comes back on the firmware it had.
+    if (T.opts.disruptive) for (const d of T.devices) if (d.plugged && d.phase) {
+      T.log.push('access refresh during ' + d.phase + ': connection reset');
+      const back = d.phase === 'prepare' ? 'app' : 'loader'; d.phase = null; if (back === 'app') d.armed = null; d.restart(back);
+    }
+    T.refreshes = (T.refreshes || 0) + 1;
     const acc = new EventTarget(); acc.inputs = new Map(); acc.outputs = new Map(); fill(acc); accesses.push(acc);
     if (!T.opts.android) { accesses.length = 0; accesses.push(acc); }
     return acc;
@@ -92,7 +100,8 @@
     go() {
       if (this.mode === 'app') {
         if (!this.armed) return;
-        this.phase = 'prepare'; this.request(0xe0000000, 8);
+        this.phase = 'prepare';
+        setTimeout(() => { if (this.phase === 'prepare' && this.plugged) this.request(0xe0000000, 8); }, T.opts.prepareMs || 0);
       } else if (this.mode === 'loader') {
         this.phase = 'write'; this.got = 0; this.written = new Uint8Array(T.image.length); this.next();
       }
@@ -106,13 +115,14 @@
     onData(d) {
       const addr = d[1] | d[2] << 8 | d[3] << 16 | (d[4] << 24 >>> 0), n = d[5] | d[6] << 8 | d[7] << 16;
       if (addr === 0xe0000000 >>> 0 || addr === (0xe0000000 | 0)) {
+        this.phase = null;
         if (T.opts.failLoader) { this.armed = null; return this.restart('app'); }   // loader did not start: old firmware again
         return this.restart('loader');
       }
       if (addr === 0xf0000000 >>> 0 || addr === (0xf0000000 | 0)) {
         let same = this.written && this.written.length === T.image.length;
         for (let i = 0; same && i < T.image.length; i++) same = this.written[i] === T.image[i];
-        T.log.push('write finished, image ' + (same ? 'matches' : 'DIFFERS'));
+        T.log.push('write finished, image ' + (same ? 'matches' : 'DIFFERS')); this.phase = null;
         if (same) { this.build = this.armed ? this.armed.full : T.buildId; this.armed = null; this.restart('app'); }
         else this.restart('loader');
         return;

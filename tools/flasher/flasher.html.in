@@ -273,11 +273,13 @@ async function doConnect() {
     updater = new W.Updater(access, pkg, (phase, pct) => { say('m4', en(phase) + (pct < 100 ? ' · ' + pct + '%' : ''), pct >= 100 ? 'ok' : ''); $('bar').style.width = pct + '%'; }, { reconnect: 120000 });
     /* Chrome on Android often doesn't list a USB device that appears while the
      * page is open, such as the FM-1 restarting into its update loader. A fresh
-     * MIDI access every few seconds lets the updater find it again. */
+     * MIDI access lets the updater find it again, but asking for one resets an
+     * open USB MIDI connection on Android, so only ask while the FM-1 is gone. */
     clearInterval(refresher);
     refresher = setInterval(async () => {
-      try { const fresh = await navigator.requestMIDIAccess({ sysex: true }); if (fresh && updater) { access = fresh; updater.access = fresh; } } catch (e) { /* keep the old access */ }
-    }, 4000);
+      if (!updater || (updater.link && !updater.link.lost)) return;   /* connected: never disturb it */
+      try { const fresh = await navigator.requestMIDIAccess({ sysex: true }); if (fresh && updater && (!updater.link || updater.link.lost)) { access = fresh; updater.access = fresh; } } catch (e) { /* keep the old access */ }
+    }, 3000);
     connected = await updater.connect({ force: $('force').checked });
     if (connected.migration) {
       $('forcebox').hidden = false;
@@ -400,7 +402,7 @@ $('flash').addEventListener('click', async () => {
     connected = null; $('connect').disabled = false;
     // Look once more and tell the person which recovery path applies.
     let seen = null;
-    try { await updater.disconnect(); const d = await updater.discover(true); if (d) { seen = d.identity; await d.link.close(); } } catch (e) {}
+    try { await updater.disconnect(); const fresh = await navigator.requestMIDIAccess({ sysex: true }).catch(() => null); if (fresh) { access = fresh; updater.access = fresh; } const d = await updater.discover(true); if (d) { seen = d.identity; await d.link.close(); } } catch (e) {}
     const ports = (updater.diagnostics && updater.diagnostics.inputs || []).join(', ') || 'none';
     if (seen && /^ota-/i.test(seen)) {
       say('m4', why + ' The FM-1 is in update mode and waiting (it shows as ' + seen + '). Leave it plugged in, press Connect over USB, then Install: the update continues from here.', 'warn');
