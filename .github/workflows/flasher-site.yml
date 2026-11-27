@@ -157,6 +157,11 @@ jobs:
           $nm = "$env:FM1_PI32_TOOLCHAIN\bin\llvm-nm.exe"
           if (Test-Path build/dx7/sdk.elf) { & $nm --print-size --size-sort --radix=d build/dx7/sdk.elf | Select-Object -Last 160 }
 
+      - name: Flash layout, 1.2 vs current
+        continue-on-error: true
+        shell: pwsh
+        run: python tools/ci/layout_check.py stable/build/dx7/firmware-report.json build/dx7/firmware-report.json
+
       - name: Audio interrupt stack, 1.2 vs current
         continue-on-error: true
         shell: pwsh

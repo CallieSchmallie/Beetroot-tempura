@@ -747,6 +747,11 @@ TP_SMALL static void draw(void)
     }
 }
 
+/* Keeps the firmware image in the same 4 KB step as 1.2, so the FM-1's
+ * settings area (which starts right after the image) stays where it is
+ * across the update. CI compares the two layouts. */
+__attribute__((used)) static const uint8_t tp_layout_pad[2048] = {1};
+
 /* ---- splash: a lit, very handsome beetroot, drawn per pixel ---- */
 TP_SMALL static float sp_hash(int x, int y)
 {
